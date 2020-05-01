@@ -127,3 +127,15 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Datasets
+COVID.DATA.LIC.AGMT.pdf
+biorxiv_medrxiv/
+comm_use_subset/
+cord_19_embeddings_4_17/
+custom_license/
+json_schema.txt
+metadata.csv
+metadata.readme
+noncomm_use_subset/
+

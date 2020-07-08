@@ -1,8 +1,30 @@
 version: '3'
 
 services:
+    # nginx:
+    #     image: nginx:latest
+    #     container_name: covidresearch-backend-nginx
+    #     ports:
+    #         - "10080:80"
+    #     volumes:
+    #         - ./src:/src
+    #         - ./config/nginx:/etc/nginx/conf.d
+    #     depends_on:
+    #         - backend
+
+    # backend:  # Python Django backend
+    #     container_name: covidresearch-backend
+    #     build: .
+    #     command: bash -c "sleep 5; python3 manage.py makemigrations && python3 manage.py migrate && gunicorn tendies.wsgi -b 0.0.0.0:3000"
+    #     ports:
+    #         - "3000:3000"
+    #     depends_on:
+    #         - elasticsearch
+    #     expose:
+    #         - "3000"
+
     elasticsearch: # Elasticsearch Instance
-        container_name: covid-search
+        container_name: covidresearch-search
         image: docker.elastic.co/elasticsearch/elasticsearch:7.7.0
         volumes: # Persist ES data in seperate "esdata" volume
             - esdata:/usr/share/elasticsearch/data

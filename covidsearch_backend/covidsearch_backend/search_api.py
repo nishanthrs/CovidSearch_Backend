@@ -12,7 +12,6 @@ NUM_INITIAL_SEARCH_RESULTS = 100
 def search_covid19_papers(request: HttpRequest) -> JsonResponse:
     try:
         query = request.GET["query"]
-        print(f"Query: {query}")
 
         es = Elasticsearch(hosts=["localhost"])
         # Simple search by title
@@ -37,6 +36,7 @@ def search_covid19_papers(request: HttpRequest) -> JsonResponse:
                 }
             )
     except Exception as exc:
+        # TODO: Haven't decided how to handle errors in Elasticsearch
         raise exc
 
     return JsonResponse({"status": 200, "papers": relevant_papers})

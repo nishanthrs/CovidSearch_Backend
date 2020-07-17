@@ -1,27 +1,32 @@
 version: '3'
 
 services:
-    # nginx:
-    #     image: nginx:latest
-    #     container_name: covidresearch-backend-nginx
-    #     ports:
-    #         - "10080:80"
-    #     volumes:
-    #         - ./src:/src
-    #         - ./config/nginx:/etc/nginx/conf.d
-    #     depends_on:
-    #         - backend
+    nginx:  # Nginx reverse proxy server
+        image: nginx:latest
+        container_name: covidresearch-backend-nginx
+        ports:
+            - "10080:80"
+        volumes:
+            - ./src:/src
+            - ./config/nginx:/etc/nginx/conf.d
+        depends_on:
+            - backend
 
-    # backend:  # Python Django backend
-    #     container_name: covidresearch-backend
-    #     build: .
-    #     command: bash -c "sleep 5; python3 manage.py makemigrations && python3 manage.py migrate && gunicorn tendies.wsgi -b 0.0.0.0:3000"
-    #     ports:
-    #         - "3000:3000"
-    #     depends_on:
-    #         - elasticsearch
-    #     expose:
-    #         - "3000"
+    backend:  # Python Django backend
+        container_name: covidresearch-backend
+        build:
+            context: covidsearch_backend
+            dockerfile: Dockerfile
+        command: bash -c "python3 manage.py makemigrations && python3 manage.py migrate && gunicorn covidsearch_backend.wsgi -b 0.0.0.0:5000 -w 4"
+        ports:
+            - "5000:5000"
+        depends_on:
+            - elasticsearch
+        environment:
+            - ES_HOST=elasticsearch
+            - ES_PORT=9200
+        expose:
+            - "5000"
 
     elasticsearch: # Elasticsearch Instance
         container_name: covidresearch-search

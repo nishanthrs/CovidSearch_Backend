@@ -23,6 +23,8 @@ num_followers, num_posts, profile_pic = await asyncio.gather(*ig_profile_tasks)
 
 
 ### Optimizing Django Framework:  
+https://developer.mozilla.org/en-US/docs/Learn/Server-side/Django/Deployment  
+https://www.nginx.com/blog/deploying-nginx-nginx-plus-docker/  
 
 ### Caching DB Queries:  
 

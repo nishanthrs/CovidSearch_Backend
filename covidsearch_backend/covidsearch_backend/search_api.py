@@ -1,11 +1,11 @@
 import asyncio
 import json
 import logging
-from elasticsearch import Elasticsearch, AsyncElasticsearch
-from typing import Any, Dict, List, Optional, Tuple, Union
+import os
 
 from django.http import HttpRequest, HttpResponseNotAllowed, JsonResponse
-
+from elasticsearch import Elasticsearch, AsyncElasticsearch
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 NUM_INITIAL_SEARCH_RESULTS = 100
 
@@ -49,7 +49,10 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
 
 
 def search_covid19_papers(request: HttpRequest) -> JsonResponse:
-    hosts = ["localhost"]  # IP address or domain name of Elasticsearch index
+    hosts = [
+        ":".join([os.environ["ES_HOST"], os.environ["ES_PORT"]]),
+        "localhost:9200",
+    ]  # IP address or domain name of Elasticsearch index
     index = "covid19_papers"
     query = request.GET["query"]
 

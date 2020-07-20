@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 from elasticsearch import Elasticsearch, RequestError
 import json
 

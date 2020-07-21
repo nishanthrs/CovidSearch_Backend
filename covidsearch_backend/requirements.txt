@@ -3,4 +3,5 @@ gunicorn
 elasticsearch>=7.8.0
 aiohttp
 feedparser
-celery
+celery[redis]
+redis

@@ -10,6 +10,8 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/3.0/ref/settings/
 """
 
+from celery.schedules import crontab
+from datetime import datetime
 import os
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
@@ -119,3 +121,18 @@ REDIS_PORT = "6379"
 BROKER_URL = "redis://" + REDIS_HOST + ":" + REDIS_PORT + "/0"
 BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 3600}
 CELERY_RESULT_BACKEND = "redis://" + REDIS_HOST + ":" + REDIS_PORT + "/0"
+CELERY_IMPORTS = ["covidsearch_backend.tasks.retrieve_rss_feeds"]
+
+curr_time = datetime.now()
+feed_data_filename = f"feed_data_{curr_time}"
+CELERY_BEAT_SCHEDULE = {
+    "hello": {
+        "task": "covidsearch_backend.celery.debug_task",
+        "schedule": crontab(),  # execute every minute
+    },
+    "retrieve_rss_feeds": {
+        "task": "retrieve_rss_feeds",
+        "schedule": crontab(),
+        "args": (feed_data_filename,),
+    },
+}

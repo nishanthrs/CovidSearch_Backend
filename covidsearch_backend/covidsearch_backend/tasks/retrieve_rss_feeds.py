@@ -1,14 +1,14 @@
 import logging
 
-from covidsearch_backend.covidsearch_backend.celery import app
-from covidsearch_backend.covidsearch_backend.scripts.covid19_rss_feeds import (
-    parse_and_upload_rss_feed_data,
-)
+from celery import shared_task
+from covidsearch_backend.celery import app
+from covidsearch_backend.scripts.covid19_rss_feeds import parse_and_upload_rss_feed_data
 from datetime import datetime
 
 
 @app.task(name="retrieve_rss_feeds")
 def retrieve_rss_feeds(rss_feeds_filename):
+    print("SURPRISE MOTHERFUCKER!")
     parse_and_upload_rss_feed_data(rss_feeds_filename)
 
 

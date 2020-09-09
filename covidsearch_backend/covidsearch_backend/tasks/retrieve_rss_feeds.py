@@ -1,27 +1,24 @@
 import logging
+import sys
 
-from celery import shared_task
-from covidsearch_backend.celery import app
-from covidsearch_backend.scripts.covid19_rss_feeds import parse_and_upload_rss_feed_data
+# Set to directory from where command is run
+sys.path.append(".")
+
 from datetime import datetime
+from redis import Redis
+from rq import Queue
+from rq_scheduler import Scheduler
+from covidsearch_backend.settings import REDIS_HOST, REDIS_PORT
+from covidsearch_backend.tasks.rss_feed_funcs import parse_and_upload_rss_feed_data
 
+RSS_FEEDS_FILENAME = f"rss_feeds"
 
-@app.task(name="retrieve_rss_feeds")
-def retrieve_rss_feeds(rss_feeds_filename):
-    print("SURPRISE MOTHERFUCKER!")
-    parse_and_upload_rss_feed_data(rss_feeds_filename)
+rss_feeds_scheduler = Scheduler(connection=Redis(host=REDIS_HOST, port=REDIS_PORT))
+rss_feeds_scheduler.schedule(
+    scheduled_time=datetime.utcnow(),  # Time for first execution, in UTC timezone
+    func=parse_and_upload_rss_feed_data,  # Function to be queued
+    args=[RSS_FEEDS_FILENAME],  # Arguments passed into function when executed
+    interval=20,  # Time before the function is called again, in seconds
+    repeat=None,  # Repeat this number of times (None means repeat forever)
+)
 
-
-"""
-def setup_periodic_tasks(sender, **kwargs):
-    # Calls RSS feed task every 15 mins
-    curr_time = datetime.now()
-    num_minutes = 1
-    num_seconds = num_minutes * 60
-    rss_feeds_filename = f"rss_feed_{curr_time}"
-    sender.add_periodic_task(
-        num_seconds,
-        retrieve_rss_feeds.s(rss_feeds_filename),
-        name="Retrieve RSS feeds every 15 minutes.",
-    )
-"""

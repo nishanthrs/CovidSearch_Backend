@@ -13,6 +13,7 @@ services:
             - backend
 
     backend:  # Python Django backend
+        image: backend
         container_name: covidresearch-backend
         build:
             context: covidsearch_backend
@@ -28,6 +29,32 @@ services:
             - ES_PORT=9200
         expose:
             - "5000"
+
+    worker:  # Worker to run asynchronous tasks
+        image: backend
+        container_name: covidresearch-backend-worker
+        command: rqworker --url ${BROKER_URL}
+        # env_file:
+            # ./config/project_vars.env.dev
+        environment:
+            - BROKER_URL=${BROKER_URL}
+        depends_on:
+            - backend
+            - redis
+
+    scheduler:  # Scheduler to run cron job of parsing rss feeds
+        image: backend
+        container_name: covidresearch-backend-scheduler
+        command: rqscheduler --host ${REDIS_HOST} --port ${REDIS_PORT} --interval ${NUM_SECS}
+        # env_file:
+            # ./config/project_vars.env.dev
+        environment:
+            - REDIS_HOST=${REDIS_HOST}
+            - REDIS_PORT=${REDIS_PORT}
+            - NUM_SECS=${NUM_SECS}
+        depends_on:
+            - backend
+            - redis
 
     elasticsearch: # Elasticsearch Instance
         container_name: covidresearch-search

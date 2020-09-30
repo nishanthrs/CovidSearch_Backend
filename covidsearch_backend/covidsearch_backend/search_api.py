@@ -62,4 +62,4 @@ def search_covid19_papers(request: HttpRequest) -> JsonResponse:
         _search_elasticsearch_index(hosts, index, query)
     )
     loop.close()
-    return JsonResponse({"status": 200, "papers": relevant_papers})
+    return JsonResponse(data={"status": 200, "papers": relevant_papers})

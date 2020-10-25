@@ -18,7 +18,7 @@ services:
         build:
             context: covidsearch_backend
             dockerfile: Dockerfile
-        command: bash -c "python3 manage.py makemigrations && python3 manage.py migrate && gunicorn covidsearch_backend.wsgi -b 0.0.0.0:5000 -w 4"
+        command: ./run_backend.sh
         ports:
             - "5000:5000"
         depends_on:
@@ -41,6 +41,8 @@ services:
         depends_on:
             - backend
             - redis
+        links:
+            - redis
 
     scheduler:  # Scheduler to run cron job of parsing rss feeds
         image: backend
@@ -54,6 +56,8 @@ services:
             - NUM_SECS=${NUM_SECS}
         depends_on:
             - backend
+            - redis
+        links:
             - redis
 
     elasticsearch: # Elasticsearch Instance

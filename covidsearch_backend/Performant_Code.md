@@ -21,6 +21,8 @@ ig_profile_tasks = [
 num_followers, num_posts, profile_pic = await asyncio.gather(*ig_profile_tasks)
 ```  
 
+Be wary of executing too many asynchronous calls. *What's even better than async programming is simply cutting out any unnecessary I/O operations.*    
+For example, if you have too many asynchronous queries to the db, there's a good chance the db will timeout b/c of the resulting excess in connections. It's MUCH more efficient to batch these asynchronous queries into one or a few queries, cutting out many round trips to the db and leading to fewer timeouts and much lower latency. The same goes for making calls to another API, especially third-party ones with rate limits.  
 
 ### Optimizing Django Framework:  
 https://developer.mozilla.org/en-US/docs/Learn/Server-side/Django/Deployment  

@@ -1,7 +1,9 @@
 #!/usr/bin/python3
 
+from logging import log
 from elasticsearch import Elasticsearch, RequestError
 import json
+import pandas as pd
 
 COVID19_PAPERS_INDEX = "covid19_papers"
 DATA_TYPE = "record"
@@ -19,6 +21,9 @@ def rec_to_actions(df, index, data_type):
 def upload_papers_to_es_idx(
     papers_df, es_idx, es_hosts, data_type=DATA_TYPE, chunk_size=UPLOAD_CHUNK_SIZE
 ):
+    """
+    Uploading Pandas DF to Elasticsearch Index: https://stackoverflow.com/questions/49726229/how-to-export-pandas-data-to-elasticsearch
+    """
     try:
         es = Elasticsearch(hosts=es_hosts)
         es.indices.create(index=es_idx, ignore=400)
@@ -38,3 +43,12 @@ def upload_papers_to_es_idx(
         print(not r["errors"])
 
         idx = max_idx
+
+
+def main():
+    covid19_papers = pd.read_csv("../../../treatment_papers_cleaned.csv")
+    upload_papers_to_es_idx(covid19_papers, COVID19_PAPERS_INDEX, ["localhost"])
+
+
+if __name__ == "__main__":
+    main()

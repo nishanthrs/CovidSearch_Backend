@@ -52,7 +52,7 @@ def scroll_over_all_docs():
 def loop_over_hashes_and_remove_duplicates():
     # Search through the hash of doc values to see if any
     # duplicate hashes have been found
-    for hashval, array_of_ids in dict_of_duplicate_docs.items():
+    for _, array_of_ids in dict_of_duplicate_docs.items():
         if len(array_of_ids) > 1:
             # print("********** Duplicate docs hash=%s **********" % hashval)
             # Get the documents that have mapped to the current hashval
@@ -61,7 +61,6 @@ def loop_over_hashes_and_remove_duplicates():
                 doc_type=DATA_TYPE,
                 body={"ids": array_of_ids},
             )
-            # print(f"# matching docs: {len(matching_docs)}")
             doc_ids = [doc["_id"] for doc in matching_docs["docs"]]
             """
             for doc in matching_docs["docs"]:

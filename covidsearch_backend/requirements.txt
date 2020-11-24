@@ -3,7 +3,6 @@ Django==3.0
 django-cors-headers==3.5.0
 gunicorn
 elasticsearch>=7.8.0
-html2text==2020.1.16
 html5lib==1.1
 aiohttp
 feedparser

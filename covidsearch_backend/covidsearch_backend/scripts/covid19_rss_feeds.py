@@ -13,8 +13,6 @@ FEEDS = {
     "nyt_health": "https://rss.nytimes.com/services/xml/rss/nyt/Health.xml",
     "nyt_science": "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml",
     "nyt_travel": "https://rss.nytimes.com/services/xml/rss/nyt/Travel.xml",
-    "wsj_lifestyle": "https://feeds.a.dj.com/rss/RSSLifestyle.xml",
-    "wsj_world_news": "https://feeds.a.dj.com/rss/RSSWorldNews.xml",
     "wired_rss": "https://www.wired.com/feed/rss",
     "mit_technology_review_rss": "https://cdn.technologyreview.com/stories.rss",
 }
@@ -23,8 +21,6 @@ FEEDS_SCRAPE_TAG = {
     "nyt_health": "StoryBodyCompanionColumn",
     "nyt_science": "StoryBodyCompanionColumn",
     "nyt_travel": "StoryBodyCompanionColumn",
-    "wsj_lifestyle": "article-content",
-    "wsj_world_news": "article-content",
     "wired_rss": "article__chunks",
     "mit_technology_review_rss": "storyContent",
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 from bs4 import BeautifulSoup
+from datetime import date
 import feedparser
 import html5lib
 import json
@@ -8,6 +9,7 @@ import os
 from pprint import pprint
 import re
 import requests
+import time
 
 FEEDS = {
     "nyt_health": "https://rss.nytimes.com/services/xml/rss/nyt/Health.xml",
@@ -27,35 +29,55 @@ FEEDS_SCRAPE_TAG = {
 
 
 def _scrape_article_text(
-    feed_title: str, feed_scrape_tag: str, page_title: str, page_url: str
+    feed_dir: str, feed_title: str, feed_scrape_tag: str, page_title: str, page_url: str
 ) -> str:
-    article = requests.get(page_url)
-    article_content = article.content
+    # Get text of article
+    article_html = requests.get(page_url)
+    article_content = article_html.content
     soup_article = BeautifulSoup(article_content, "html5lib")
     article_bodies = soup_article.find_all("div", class_=re.compile(feed_scrape_tag))
     if not article_bodies:
         print(f"Could not find article body for {page_title} at {page_url}")
+        """
+        with open(f"{page_title}.txt", "w") as f:
+            f.write(soup_article.prettify())
+        """
         return ""
 
-    if not os.path.exists(feed_title):
-        os.makedirs(feed_title)
-    page_title_filename = page_title.replace(" ", "_")
-    webpage_path = f"{feed_title}/{page_title_filename}.txt"
-    with open(webpage_path, "w+") as webpage_file:
+    # Create feed dir and filename
+    feed_domain_dir = os.path.join(feed_dir, feed_title)
+    if not os.path.exists(feed_domain_dir):
+        os.makedirs(feed_domain_dir)
+    page_title_filename = f"{page_title.replace(' ', '_')}.txt"
+    article_text_path = os.path.join(feed_domain_dir, page_title_filename)
+
+    # Write article text into these files
+    with open(article_text_path, "w+") as article_text_file:
         for article_body in article_bodies:
             body_text = article_body.find_all("p")
             for paragraph in body_text:
                 paragraph_text = paragraph.get_text()
-                webpage_file.write(f"{paragraph_text}\n")
+                article_text_file.write(f"{paragraph_text}\n")
 
     return ""
+
+
+def _summarize_news_articles(feed_dir: str) -> None:
+    """TODO: Summarize news articles using Hugging face transformers"""
+    pass
 
 
 def parse_and_upload_rss_feed_data(feed_data_filename: str):
     """
     TODO: Filter and parse RSS feed data for coronavirus related articles
     """
-    with open(feed_data_filename, "w+") as feed_data_file:
+    curr_date_str = date.today().strftime("%m-%d-%Y")
+    feed_dir = f"rss_feeds_{curr_date_str}"
+    if not os.path.exists(feed_dir):
+        os.makedirs(feed_dir)
+    feed_data_path = os.path.join(feed_dir, feed_data_filename)
+
+    with open(feed_data_path, "w+") as feed_data_file:
         for feed, rss_url in FEEDS.items():
             rss_parsed = feedparser.parse(rss_url)
             feed_data_file.write(f"Feed: {feed}\n")
@@ -72,12 +94,17 @@ def parse_and_upload_rss_feed_data(feed_data_filename: str):
                 article_title = feed_entry["title"]
                 article_url = feed_entry["link"]
                 _scrape_article_text(
-                    feed_title, feed_scrape_tag, article_title, article_url
+                    feed_dir, feed_title, feed_scrape_tag, article_title, article_url
                 )
+
+    _summarize_news_articles(feed_dir)
 
 
 def main():
-    parse_and_upload_rss_feed_data("feed_data.txt")
+    start_time = time.time()
+    parse_and_upload_rss_feed_data(f"feed_data.txt")
+    end_time = time.time()
+    print(f"Execution time (sync): {end_time - start_time}")
 
 
 if __name__ == "__main__":

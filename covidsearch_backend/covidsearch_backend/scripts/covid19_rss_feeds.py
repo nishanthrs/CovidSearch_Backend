@@ -1,14 +1,15 @@
 #!/usr/bin/python3
 
+# import aiohttp
+from aiohttp import ClientSession
+import asyncio
 from bs4 import BeautifulSoup
 from datetime import date
 import feedparser
 import html5lib
 import json
 import os
-from pprint import pprint
 import re
-import requests
 import time
 
 FEEDS = {
@@ -28,38 +29,44 @@ FEEDS_SCRAPE_TAG = {
 }
 
 
-def _scrape_article_text(
-    feed_dir: str, feed_title: str, feed_scrape_tag: str, page_title: str, page_url: str
-) -> str:
+async def _scrape_article_text(
+    feed_session: ClientSession,
+    feed_dir: str,
+    feed_title: str,
+    feed_scrape_tag: str,
+    page_title: str,
+    page_url: str,
+) -> None:
     # Get text of article
-    article_html = requests.get(page_url)
-    article_content = article_html.content
-    soup_article = BeautifulSoup(article_content, "html5lib")
-    article_bodies = soup_article.find_all("div", class_=re.compile(feed_scrape_tag))
-    if not article_bodies:
-        print(f"Could not find article body for {page_title} at {page_url}")
-        """
-        with open(f"{page_title}.txt", "w") as f:
-            f.write(soup_article.prettify())
-        """
-        return ""
+    async with feed_session.get(page_url) as article_html:
+        # article_content = article_html.content
+        article_content = await article_html.text()
+        soup_article = BeautifulSoup(article_content, "html5lib")
+        article_bodies = soup_article.find_all(
+            "div", class_=re.compile(feed_scrape_tag)
+        )
+        if not article_bodies:
+            print(f"Could not find article body for {page_title} at {page_url}")
+            """
+            with open(f"{page_title}.txt", "w") as f:
+                f.write(soup_article.prettify())
+            """
+            return ""
 
-    # Create feed dir and filename
-    feed_domain_dir = os.path.join(feed_dir, feed_title)
-    if not os.path.exists(feed_domain_dir):
-        os.makedirs(feed_domain_dir)
-    page_title_filename = f"{page_title.replace(' ', '_')}.txt"
-    article_text_path = os.path.join(feed_domain_dir, page_title_filename)
+        # Create feed dir and filename
+        feed_domain_dir = os.path.join(feed_dir, feed_title)
+        if not os.path.exists(feed_domain_dir):
+            os.makedirs(feed_domain_dir)
+        page_title_filename = f"{page_title.replace(' ', '_')}.txt"
+        article_text_path = os.path.join(feed_domain_dir, page_title_filename)
 
-    # Write article text into these files
-    with open(article_text_path, "w+") as article_text_file:
-        for article_body in article_bodies:
-            body_text = article_body.find_all("p")
-            for paragraph in body_text:
-                paragraph_text = paragraph.get_text()
-                article_text_file.write(f"{paragraph_text}\n")
-
-    return ""
+        # Write article text into these files
+        with open(article_text_path, "w+") as article_text_file:
+            for article_body in article_bodies:
+                body_text = article_body.find_all("p")
+                for paragraph in body_text:
+                    paragraph_text = paragraph.get_text()
+                    article_text_file.write(f"{paragraph_text}\n")
 
 
 def _summarize_news_articles(feed_dir: str) -> None:
@@ -67,7 +74,35 @@ def _summarize_news_articles(feed_dir: str) -> None:
     pass
 
 
-def parse_and_upload_rss_feed_data(feed_data_filename: str):
+async def _write_feed_metadata_and_article_text(
+    feed_dir: str, feed_data_file: str, feed: str, rss_url: str
+) -> None:
+    rss_parsed = feedparser.parse(rss_url)
+    feed_data_file.write(f"Feed: {feed}\n")
+    feed_data_file.write(json.dumps(rss_parsed, indent=4))
+
+    feed_scrape_tag = FEEDS_SCRAPE_TAG[feed]
+    feed_metadata = rss_parsed["feed"]
+    feed_title = feed_metadata["title"]
+    feed_entries = rss_parsed["entries"]
+    if not feed_entries:
+        return
+
+    for feed_entry in feed_entries:
+        article_title = feed_entry["title"]
+        article_url = feed_entry["link"]
+        async with ClientSession() as feed_session:
+            await _scrape_article_text(
+                feed_session,
+                feed_dir,
+                feed_title,
+                feed_scrape_tag,
+                article_title,
+                article_url,
+            )
+
+
+async def parse_and_upload_rss_feed_data(feed_data_filename: str) -> None:
     """
     TODO: Filter and parse RSS feed data for coronavirus related articles
     """
@@ -78,34 +113,24 @@ def parse_and_upload_rss_feed_data(feed_data_filename: str):
     feed_data_path = os.path.join(feed_dir, feed_data_filename)
 
     with open(feed_data_path, "w+") as feed_data_file:
-        for feed, rss_url in FEEDS.items():
-            rss_parsed = feedparser.parse(rss_url)
-            feed_data_file.write(f"Feed: {feed}\n")
-            feed_data_file.write(json.dumps(rss_parsed, indent=4))
-
-            feed_scrape_tag = FEEDS_SCRAPE_TAG[feed]
-            feed_metadata = rss_parsed["feed"]
-            feed_title = feed_metadata["title"]
-            feed_entries = rss_parsed["entries"]
-            if not feed_entries:
-                continue
-
-            for feed_entry in feed_entries:
-                article_title = feed_entry["title"]
-                article_url = feed_entry["link"]
-                _scrape_article_text(
-                    feed_dir, feed_title, feed_scrape_tag, article_title, article_url
+        await asyncio.gather(
+            *[
+                _write_feed_metadata_and_article_text(
+                    feed_dir, feed_data_file, feed, rss_url
                 )
+                for feed, rss_url in FEEDS.items()
+            ]
+        )
 
     _summarize_news_articles(feed_dir)
 
 
-def main():
+async def main():
     start_time = time.time()
-    parse_and_upload_rss_feed_data(f"feed_data.txt")
+    await parse_and_upload_rss_feed_data(f"feed_data.txt")
     end_time = time.time()
-    print(f"Execution time (sync): {end_time - start_time}")
+    print(f"Execution time (async): {end_time - start_time}")
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

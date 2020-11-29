@@ -11,6 +11,7 @@ import json
 import os
 import re
 import time
+from transformers import AutoModelWithLMHead, AutoTokenizer
 
 FEEDS = {
     "nyt_health": "https://rss.nytimes.com/services/xml/rss/nyt/Health.xml",
@@ -69,9 +70,26 @@ async def _scrape_article_text(
                     article_text_file.write(f"{paragraph_text}\n")
 
 
-def _summarize_news_articles(feed_dir: str) -> None:
+def _summarize_news_article(article_filename: str) -> None:
     """TODO: Summarize news articles using Hugging face transformers"""
-    pass
+    model = AutoModelWithLMHead.from_pretrained("t5-base", return_dict=True)
+    tokenizer = AutoTokenizer.from_pretrained("t5-base")
+
+    with open(article_filename, "r") as article_file:
+        article = article_file.read()
+        inputs = tokenizer.encode(
+            "summarize: " + article, return_tensors="pt", max_length=512
+        )
+        outputs = model.generate(
+            inputs,
+            max_length=150,
+            min_length=50,
+            length_penalty=2.0,
+            num_beams=4,
+            early_stopping=True,
+        )
+        print(f"Summarization task output: {outputs}")
+        print(tokenizer.decode(outputs[0]))
 
 
 async def _write_feed_metadata_and_article_text(
@@ -122,8 +140,6 @@ async def parse_and_upload_rss_feed_data(feed_data_filename: str) -> None:
             ]
         )
 
-    _summarize_news_articles(feed_dir)
-
 
 async def main():
     start_time = time.time()
@@ -133,4 +149,14 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # asyncio.run(main())
+    article_files = [
+        "rss_feeds_11-24-2020/Wired/Google_Is_Testing_End-to-End_Encryption_in_Android_Messages.txt",
+        "rss_feeds_11-24-2020/Wired/A_Solar-Powered_Rocket_Might_Be_Our_Interstellar_Ticket.txt",
+        "rss_feeds_11-24-2020/Wired/This_Pandemic_Must_Be_Seen.txt",
+    ]
+    article_file = article_files[1]
+    start_time = time.time()
+    _summarize_news_article(article_file)
+    summarization_exec_time = time.time() - start_time
+    print(f"Summarization execution time: {summarization_exec_time}")

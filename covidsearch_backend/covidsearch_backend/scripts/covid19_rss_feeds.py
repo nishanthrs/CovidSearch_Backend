@@ -4,10 +4,12 @@
 from aiohttp import ClientSession
 import asyncio
 from bs4 import BeautifulSoup
+import dask
 from datetime import date
 import feedparser
 import html5lib
 import json
+from multiprocessing import Pool
 import os
 import re
 import time
@@ -70,28 +72,6 @@ async def _scrape_article_text(
                     article_text_file.write(f"{paragraph_text}\n")
 
 
-def _summarize_news_article(article_filename: str) -> None:
-    """TODO: Summarize news articles using Hugging face transformers"""
-    model = AutoModelWithLMHead.from_pretrained("t5-base", return_dict=True)
-    tokenizer = AutoTokenizer.from_pretrained("t5-base")
-
-    with open(article_filename, "r") as article_file:
-        article = article_file.read()
-        inputs = tokenizer.encode(
-            "summarize: " + article, return_tensors="pt", max_length=512
-        )
-        outputs = model.generate(
-            inputs,
-            max_length=150,
-            min_length=50,
-            length_penalty=2.0,
-            num_beams=4,
-            early_stopping=True,
-        )
-        print(f"Summarization task output: {outputs}")
-        print(tokenizer.decode(outputs[0]))
-
-
 async def _write_feed_metadata_and_article_text(
     feed_dir: str, feed_data_file: str, feed: str, rss_url: str
 ) -> None:
@@ -141,22 +121,84 @@ async def parse_and_upload_rss_feed_data(feed_data_filename: str) -> None:
         )
 
 
+async def _summarize_news_article(article_filename: str) -> str:
+    # print(f"Process: {os.getpid()}")
+    model = AutoModelWithLMHead.from_pretrained("t5-base", return_dict=True)
+    tokenizer = AutoTokenizer.from_pretrained("t5-base")
+
+    with open(article_filename, "r") as article_file:
+        article = article_file.read()
+
+    # print(f"Read the file: {article_filename}")
+
+    inputs = tokenizer.encode(
+        "summarize: " + article, return_tensors="pt", max_length=512
+    )
+    # print(f"Encoding the file: {article_filename}")
+    outputs = model.generate(
+        inputs,
+        max_length=150,
+        min_length=100,
+        length_penalty=1.2,
+        num_beams=4,
+        early_stopping=True,
+    )
+    # print(f"Summarization task output: {outputs}")
+    article_summary = tokenizer.decode(outputs[0])
+
+    return article_summary
+
+
 async def main():
+    """
     start_time = time.time()
     await parse_and_upload_rss_feed_data(f"feed_data.txt")
     end_time = time.time()
     print(f"Execution time (async): {end_time - start_time}")
-
-
-if __name__ == "__main__":
-    # asyncio.run(main())
+    """
     article_files = [
         "rss_feeds_11-24-2020/Wired/Google_Is_Testing_End-to-End_Encryption_in_Android_Messages.txt",
         "rss_feeds_11-24-2020/Wired/A_Solar-Powered_Rocket_Might_Be_Our_Interstellar_Ticket.txt",
         "rss_feeds_11-24-2020/Wired/This_Pandemic_Must_Be_Seen.txt",
+        "rss_feeds_12-02-2020/Wired/The_Race_To_Crack_Battery_Recycling—Before_It’s_Too_Late.txt",
     ]
-    article_file = article_files[1]
     start_time = time.time()
-    _summarize_news_article(article_file)
+
+    # 52.33 seconds
+    """
+    article_summaries = []
+    for article_file in article_files:
+        article_summary = dask.delayed(_summarize_news_article)(article_file)
+        article_summary.visualize()
+        article_summaries.append(article_summary)
+    article_summaries_futures = dask.persist(*article_summaries)
+    article_summaries_res = dask.compute(*article_summaries_futures)
+    print(f"Article summaries: {article_summaries_res}")
+    """
+
+    """
+    1083 seconds??? wtf
+    with Pool(3) as p:
+        article_summaries = p.map(_summarize_news_article, article_files)
+        print(f"Article summaries: {article_summaries}")
+    p.close()
+    p.join()
+    """
+
+    """
+    58.93 seconds
+    article_summaries = [
+        _summarize_news_article(article_file) for article_file in article_files
+    ]
+    """
+
+    article_summaries = await asyncio.gather(
+        *[_summarize_news_article(article_file) for article_file in article_files]
+    )
+
     summarization_exec_time = time.time() - start_time
     print(f"Summarization execution time: {summarization_exec_time}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

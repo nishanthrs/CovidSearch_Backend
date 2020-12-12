@@ -9,7 +9,7 @@ from datetime import date
 import feedparser
 import html5lib
 import json
-from multiprocessing import Pool
+from multiprocessing import Pool, Process
 import os
 import re
 import time
@@ -121,7 +121,7 @@ async def parse_and_upload_rss_feed_data(feed_data_filename: str) -> None:
         )
 
 
-async def _summarize_news_article(article_filename: str) -> str:
+def _summarize_news_article(article_filename: str) -> str:
     # print(f"Process: {os.getpid()}")
     model = AutoModelWithLMHead.from_pretrained("t5-base", return_dict=True)
     tokenizer = AutoTokenizer.from_pretrained("t5-base")
@@ -154,47 +154,70 @@ async def main():
     start_time = time.time()
     await parse_and_upload_rss_feed_data(f"feed_data.txt")
     end_time = time.time()
+    # Takes around 20-30 seconds (more precisely, 24.56 seconds for 5 RSS feeds or ~170 articles)
     print(f"Execution time (async): {end_time - start_time}")
     """
     article_files = [
-        "rss_feeds_11-24-2020/Wired/Google_Is_Testing_End-to-End_Encryption_in_Android_Messages.txt",
-        "rss_feeds_11-24-2020/Wired/A_Solar-Powered_Rocket_Might_Be_Our_Interstellar_Ticket.txt",
-        "rss_feeds_11-24-2020/Wired/This_Pandemic_Must_Be_Seen.txt",
-        "rss_feeds_12-02-2020/Wired/The_Race_To_Crack_Battery_Recycling—Before_It’s_Too_Late.txt",
+        # "rss_feeds_11-24-2020/Wired/Google_Is_Testing_End-to-End_Encryption_in_Android_Messages.txt",
+        # "rss_feeds_11-24-2020/Wired/A_Solar-Powered_Rocket_Might_Be_Our_Interstellar_Ticket.txt",
+        # "rss_feeds_11-24-2020/Wired/This_Pandemic_Must_Be_Seen.txt",
+        # "rss_feeds_12-02-2020/Wired/The_Race_To_Crack_Battery_Recycling—Before_It’s_Too_Late.txt",
+        "rss_feeds_12-12-2020/Wired/The_Smoking_Gun_in_the_Facebook_Antitrust_Case.txt",
+        "rss_feeds_12-12-2020/Wired/Hackers_Accessed_Covid_Vaccine_Data_Through_the_EU_Regulator.txt",
+        "rss_feeds_12-12-2020/Wired/The_Dark_Side_of_Big_Tech’s_Funding_for_AI_Research.txt",
+        "rss_feeds_12-12-2020/New on MIT Technology Review/WhatsApp_is_limiting_message_forwarding_to_combat_coronavirus_misinformation.txt",
+        "rss_feeds_12-12-2020/New on MIT Technology Review/Here_are_the_states_that_will_suffer_the_worst_hospital_bed_shortages.txt",
+        "rss_feeds_12-12-2020/New on MIT Technology Review/The_coronavirus_test_that_might_exempt_you_from_social_distancing—if_you_pass.txt",
+        "rss_feeds_12-12-2020/NYT > Science/F.D.A._Clears_Pfizer_Vaccine,_and_Millions_of_Doses_Will_Be_Shipped_Right_Away.txt",
+        "rss_feeds_12-12-2020/NYT > Science/Earth_Is_Still_Sailing_Into_Climate_Chaos,_Report_Says,_but_Its_Course_Could_Shift.txt",
+        "rss_feeds_12-12-2020/NYT > Health/Covid_Testing:_What_You_Need_to_Know.txt",
+        "rss_feeds_12-12-2020/Wired/Severe_Wildfires_Are_Devastating_the_California_Condor.txt",
     ]
     start_time = time.time()
 
-    # 52.33 seconds
     """
+    # Dask multiprocessing (runs on a single process though?!)
+    # 50-55 seconds
     article_summaries = []
     for article_file in article_files:
         article_summary = dask.delayed(_summarize_news_article)(article_file)
-        article_summary.visualize()
+        # article_summary.visualize()
         article_summaries.append(article_summary)
     article_summaries_futures = dask.persist(*article_summaries)
     article_summaries_res = dask.compute(*article_summaries_futures)
-    print(f"Article summaries: {article_summaries_res}")
+    # print(f"Article summaries: {article_summaries_res}")
     """
 
-    """
-    1083 seconds??? wtf
-    with Pool(3) as p:
+    # Multiprocessing #1
+    # 1083 seconds??? wtf (on Ubuntu machine)
+    # For some reason, worked fine in 40-45 seconds on FB Mac
+    with Pool(4) as p:
         article_summaries = p.map(_summarize_news_article, article_files)
         print(f"Article summaries: {article_summaries}")
     p.close()
     p.join()
+
+    """
+    # Multiprocesing #2
+    # Issue #1: https://stackoverflow.com/questions/50168647/multiprocessing-causes-python-to-crash-and-gives-an-error-may-have-been-in-progr
+    # 40-45 seconds
+    procs = []
+    for article_file in article_files:
+        proc = Process(target=_summarize_news_article, args=(article_file,))
+        procs.append(proc)
+        proc.start()
+
+    for proc in procs:
+        proc.join()
     """
 
     """
-    58.93 seconds
+    List Comprehension
+    # 90-95 seconds
     article_summaries = [
         _summarize_news_article(article_file) for article_file in article_files
     ]
     """
-
-    article_summaries = await asyncio.gather(
-        *[_summarize_news_article(article_file) for article_file in article_files]
-    )
 
     summarization_exec_time = time.time() - start_time
     print(f"Summarization execution time: {summarization_exec_time}")

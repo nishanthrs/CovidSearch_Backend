@@ -22,7 +22,6 @@ FEEDS = {
     "wired_rss": "https://www.wired.com/feed/rss",
     "mit_technology_review_rss": "https://cdn.technologyreview.com/stories.rss",
 }
-
 FEEDS_SCRAPE_TAG = {
     "nyt_health": "StoryBodyCompanionColumn",
     "nyt_science": "StoryBodyCompanionColumn",
@@ -30,6 +29,7 @@ FEEDS_SCRAPE_TAG = {
     "wired_rss": "article__chunks",
     "mit_technology_review_rss": "storyContent",
 }
+NUM_PROCESSES = 4  # Dependent on # cores of machine
 
 
 async def _scrape_article_text(
@@ -191,7 +191,8 @@ async def main():
     # Multiprocessing #1
     # 1083 seconds??? wtf (on Ubuntu machine)
     # For some reason, worked fine in 40-45 seconds on FB Mac
-    with Pool(4) as p:
+    # 102-105 seconds
+    with Pool(NUM_PROCESSES) as p:
         article_summaries = p.map(_summarize_news_article, article_files)
         print(f"Article summaries: {article_summaries}")
     p.close()
@@ -201,6 +202,7 @@ async def main():
     # Multiprocesing #2
     # Issue #1: https://stackoverflow.com/questions/50168647/multiprocessing-causes-python-to-crash-and-gives-an-error-may-have-been-in-progr
     # 40-45 seconds
+    # 90-105 seconds (more variance than multiprocessing #1, but first approach should be better since it's better to fix # processes created)
     procs = []
     for article_file in article_files:
         proc = Process(target=_summarize_news_article, args=(article_file,))
@@ -212,8 +214,9 @@ async def main():
     """
 
     """
-    List Comprehension
+    # List Comprehension
     # 90-95 seconds
+    # ~220 seconds
     article_summaries = [
         _summarize_news_article(article_file) for article_file in article_files
     ]

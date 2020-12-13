@@ -4,12 +4,16 @@ from logging import log
 from elasticsearch import Elasticsearch, RequestError
 import json
 import pandas as pd
+import os
+from pprint import pprint
+import spacy
+import time
+
+nlp = spacy.load("en_core_web_sm")
 
 COVID19_PAPERS_INDEX = "covid19_papers"
 DATA_TYPE = "record"
 UPLOAD_CHUNK_SIZE = 1000
-
-# TODO: Schedule this and a coronavirus RSS feed as a chron job
 
 
 def rec_to_actions(df, index, data_type):

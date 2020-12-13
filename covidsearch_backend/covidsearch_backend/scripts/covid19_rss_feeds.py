@@ -9,11 +9,15 @@ from datetime import date
 import feedparser
 import html5lib
 import json
-from multiprocessing import Pool, Process
+
+# from multiprocessing import Pool, Process
+import torch.multiprocessing as mp
+from torch.multiprocessing import Pool, Process
 import os
 import re
 import time
 from transformers import AutoModelWithLMHead, AutoTokenizer
+from typing import Any, List
 
 FEEDS = {
     "nyt_health": "https://rss.nytimes.com/services/xml/rss/nyt/Health.xml",
@@ -121,18 +125,14 @@ async def parse_and_upload_rss_feed_data(feed_data_filename: str) -> None:
         )
 
 
-def _summarize_news_article(article_filename: str) -> str:
+def _summarize_news_article(model: Any, tokenizer: Any, article_filename: str) -> str:
     # print(f"Process: {os.getpid()}")
-    model = AutoModelWithLMHead.from_pretrained("t5-base", return_dict=True)
-    tokenizer = AutoTokenizer.from_pretrained("t5-base")
-
     with open(article_filename, "r") as article_file:
         article = article_file.read()
-
     # print(f"Read the file: {article_filename}")
 
     inputs = tokenizer.encode(
-        "summarize: " + article, return_tensors="pt", max_length=512
+        "summarize: " + article, return_tensors="pt", max_length=512, truncation=True,
     )
     # print(f"Encoding the file: {article_filename}")
     outputs = model.generate(
@@ -149,6 +149,58 @@ def _summarize_news_article(article_filename: str) -> str:
     return article_summary
 
 
+def _parallelize_summarizations(article_filenames: List[str]) -> None:
+    model = AutoModelWithLMHead.from_pretrained("t5-base", return_dict=True)
+    model.share_memory()
+    tokenizer = AutoTokenizer.from_pretrained("t5-base")
+
+    """
+    # Multiprocessing #1
+    # Hangs on Ubuntu machine for some reason (tried using torch.multiprocessing, moving outside of main method, using model and tokenizer as params, etc; nothing works)
+    # For some reason, worked fine in 40-45 seconds on FB Mac
+    # 102-105 seconds
+    mp.set_start_method("spawn")
+    with Pool(NUM_PROCESSES) as p:
+        article_summaries = p.starmap(
+            _summarize_news_article,
+            [
+                (model, tokenizer, article_filename)
+                for article_filename in article_filenames
+            ],
+        )
+        print(f"Article summaries: {article_summaries}")
+    p.close()
+    p.join()
+    """
+
+    # Multiprocesing #2
+    # Issue #1: https://stackoverflow.com/questions/50168647/multiprocessing-causes-python-to-crash-and-gives-an-error-may-have-been-in-progr
+    # 40-45 seconds
+    # 90-105 seconds (more variance than multiprocessing #1, but first approach should be better since it's better to fix # processes created)
+    """
+    procs = []
+    for article_file in article_files:
+        proc = Process(
+            target=_summarize_news_article, args=(model, tokenizer, article_file,)
+        )
+        procs.append(proc)
+        proc.start()
+
+    for proc in procs:
+        proc.join()
+    """
+
+    # List Comprehension
+    # 90-95 seconds
+    # ~220 seconds
+    article_summaries = [
+        _summarize_news_article(model, tokenizer, article_file)
+        for article_file in article_filenames
+    ]
+    for article_summary in article_summaries:
+        print(f"Article summary: {article_summary}")
+
+
 async def main():
     """
     start_time = time.time()
@@ -158,69 +210,30 @@ async def main():
     print(f"Execution time (async): {end_time - start_time}")
     """
     article_files = [
-        # "rss_feeds_11-24-2020/Wired/Google_Is_Testing_End-to-End_Encryption_in_Android_Messages.txt",
-        # "rss_feeds_11-24-2020/Wired/A_Solar-Powered_Rocket_Might_Be_Our_Interstellar_Ticket.txt",
-        # "rss_feeds_11-24-2020/Wired/This_Pandemic_Must_Be_Seen.txt",
-        # "rss_feeds_12-02-2020/Wired/The_Race_To_Crack_Battery_Recycling—Before_It’s_Too_Late.txt",
-        "rss_feeds_12-12-2020/Wired/The_Smoking_Gun_in_the_Facebook_Antitrust_Case.txt",
-        "rss_feeds_12-12-2020/Wired/Hackers_Accessed_Covid_Vaccine_Data_Through_the_EU_Regulator.txt",
-        "rss_feeds_12-12-2020/Wired/The_Dark_Side_of_Big_Tech’s_Funding_for_AI_Research.txt",
-        "rss_feeds_12-12-2020/New on MIT Technology Review/WhatsApp_is_limiting_message_forwarding_to_combat_coronavirus_misinformation.txt",
-        "rss_feeds_12-12-2020/New on MIT Technology Review/Here_are_the_states_that_will_suffer_the_worst_hospital_bed_shortages.txt",
-        "rss_feeds_12-12-2020/New on MIT Technology Review/The_coronavirus_test_that_might_exempt_you_from_social_distancing—if_you_pass.txt",
-        "rss_feeds_12-12-2020/NYT > Science/F.D.A._Clears_Pfizer_Vaccine,_and_Millions_of_Doses_Will_Be_Shipped_Right_Away.txt",
-        "rss_feeds_12-12-2020/NYT > Science/Earth_Is_Still_Sailing_Into_Climate_Chaos,_Report_Says,_but_Its_Course_Could_Shift.txt",
-        "rss_feeds_12-12-2020/NYT > Health/Covid_Testing:_What_You_Need_to_Know.txt",
-        "rss_feeds_12-12-2020/Wired/Severe_Wildfires_Are_Devastating_the_California_Condor.txt",
+        "rss_feeds_11-24-2020/Wired/Google_Is_Testing_End-to-End_Encryption_in_Android_Messages.txt",
+        "rss_feeds_11-24-2020/Wired/A_Solar-Powered_Rocket_Might_Be_Our_Interstellar_Ticket.txt",
+        "rss_feeds_11-24-2020/Wired/This_Pandemic_Must_Be_Seen.txt",
+        "rss_feeds_12-02-2020/Wired/The_Race_To_Crack_Battery_Recycling—Before_It’s_Too_Late.txt",
+        "rss_feeds_12-02-2020/New on MIT Technology Review/Blood_plasma_taken_from_covid-19_survivors_might_help_patients_fight_it_off.txt",
+        "rss_feeds_12-02-2020/New on MIT Technology Review/Why_does_it_suddenly_feel_like_1999_on_the_internet?.txt",
+        "rss_feeds_12-02-2020/New on MIT Technology Review/Why_does_it_suddenly_feel_like_1999_on_the_internet?.txt",
+        "rss_feeds_12-02-2020/NYT > Health/Biden’s_Plan_for_Seniors_Is_Not_Just_a_Plan_for_Seniors.txt",
+        "rss_feeds_12-02-2020/NYT > Science/Virus_May_Have_Arrived_in_U.S._in_December,_but_Didn’t_Spread_Until_Later.txt",
+        "rss_feeds_12-02-2020/NYT > Health/Vaccines_Are_Coming,_but_Pandemic_Experts_Expect_a_'Horrible'_Winter.txt",
+        # "rss_feeds_12-12-2020/Wired/The_Smoking_Gun_in_the_Facebook_Antitrust_Case.txt",
+        # "rss_feeds_12-12-2020/Wired/Hackers_Accessed_Covid_Vaccine_Data_Through_the_EU_Regulator.txt",
+        # "rss_feeds_12-12-2020/Wired/The_Dark_Side_of_Big_Tech’s_Funding_for_AI_Research.txt",
+        # "rss_feeds_12-12-2020/New on MIT Technology Review/WhatsApp_is_limiting_message_forwarding_to_combat_coronavirus_misinformation.txt",
+        # "rss_feeds_12-12-2020/New on MIT Technology Review/Here_are_the_states_that_will_suffer_the_worst_hospital_bed_shortages.txt",
+        # "rss_feeds_12-12-2020/New on MIT Technology Review/The_coronavirus_test_that_might_exempt_you_from_social_distancing—if_you_pass.txt",
+        # "rss_feeds_12-12-2020/NYT > Science/F.D.A._Clears_Pfizer_Vaccine,_and_Millions_of_Doses_Will_Be_Shipped_Right_Away.txt",
+        # "rss_feeds_12-12-2020/NYT > Science/Earth_Is_Still_Sailing_Into_Climate_Chaos,_Report_Says,_but_Its_Course_Could_Shift.txt",
+        # "rss_feeds_12-12-2020/NYT > Health/Covid_Testing:_What_You_Need_to_Know.txt",
+        # "rss_feeds_12-12-2020/Wired/Severe_Wildfires_Are_Devastating_the_California_Condor.txt",
     ]
     start_time = time.time()
 
-    """
-    # Dask multiprocessing (runs on a single process though?!)
-    # 50-55 seconds
-    article_summaries = []
-    for article_file in article_files:
-        article_summary = dask.delayed(_summarize_news_article)(article_file)
-        # article_summary.visualize()
-        article_summaries.append(article_summary)
-    article_summaries_futures = dask.persist(*article_summaries)
-    article_summaries_res = dask.compute(*article_summaries_futures)
-    # print(f"Article summaries: {article_summaries_res}")
-    """
-
-    # Multiprocessing #1
-    # 1083 seconds??? wtf (on Ubuntu machine)
-    # For some reason, worked fine in 40-45 seconds on FB Mac
-    # 102-105 seconds
-    with Pool(NUM_PROCESSES) as p:
-        article_summaries = p.map(_summarize_news_article, article_files)
-        print(f"Article summaries: {article_summaries}")
-    p.close()
-    p.join()
-
-    """
-    # Multiprocesing #2
-    # Issue #1: https://stackoverflow.com/questions/50168647/multiprocessing-causes-python-to-crash-and-gives-an-error-may-have-been-in-progr
-    # 40-45 seconds
-    # 90-105 seconds (more variance than multiprocessing #1, but first approach should be better since it's better to fix # processes created)
-    procs = []
-    for article_file in article_files:
-        proc = Process(target=_summarize_news_article, args=(article_file,))
-        procs.append(proc)
-        proc.start()
-
-    for proc in procs:
-        proc.join()
-    """
-
-    """
-    # List Comprehension
-    # 90-95 seconds
-    # ~220 seconds
-    article_summaries = [
-        _summarize_news_article(article_file) for article_file in article_files
-    ]
-    """
+    _parallelize_summarizations(article_files)
 
     summarization_exec_time = time.time() - start_time
     print(f"Summarization execution time: {summarization_exec_time}")

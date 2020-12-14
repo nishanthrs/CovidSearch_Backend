@@ -8,6 +8,7 @@ import os
 from pprint import pprint
 import spacy
 import time
+from typing import Any, List
 
 nlp = spacy.load("en_core_web_sm")
 
@@ -20,6 +21,11 @@ def rec_to_actions(df, index, data_type):
     for record in df.to_dict(orient="records"):
         yield ('{ "index" : { "_index" : "%s", "_type" : "%s" }}' % (index, data_type))
         yield (json.dumps(record))
+
+
+def _convert_df_to_json(df: pd.DataFrame) -> Any:
+    json_res = df.to_json(orient="split")
+    json_data = [{"_id": idx, ""} for idx, paper in df.iterrows()]
 
 
 def upload_papers_to_es_idx(
@@ -35,6 +41,7 @@ def upload_papers_to_es_idx(
         print(f"Index {es_idx} already exists; continue uploading papers to {es_idx}")
     # TODO: Catch other exceptions in the future: https://elasticsearch-py.readthedocs.io/en/master/exceptions.html
 
+    """
     idx = 0
     while idx < papers_df.shape[0]:
         if idx + chunk_size < papers_df.shape[0]:
@@ -47,10 +54,16 @@ def upload_papers_to_es_idx(
         print(not r["errors"])
 
         idx = max_idx
+    """
+
+
+
+def delete_index_data(es_idx: str) -> None:
+    pass
 
 
 def main():
-    covid19_papers = pd.read_csv("../../../treatment_papers_cleaned.csv")
+    covid19_papers = pd.read_csv("research_paper_data/research_papers.csv")
     upload_papers_to_es_idx(covid19_papers, COVID19_PAPERS_INDEX, ["localhost"])
 
 

@@ -10,6 +10,7 @@ import time
 import dask.dataframe
 
 NUM_DF_PARTITIONS = 30
+RESEARCH_PAPER_DATA_DIR = "research_papers"
 
 
 def retrieve_paper_body_text(pdf_json_files) -> str:
@@ -79,6 +80,14 @@ def main():
     print(f"Preprocessing time (in seconds): {end - start}")  # Takes around ~59 seconds
     print(f"Papers df size: {papers_df.shape}")
     print(f"Papers df head: {papers_df.head()}")
+
+    if not os.path.exists(RESEARCH_PAPER_DATA_DIR):
+        os.mkdir(RESEARCH_PAPER_DATA_DIR)
+    papers_df.to_csv(
+        os.path.join(RESEARCH_PAPER_DATA_DIR, "research_papers.csv"),
+        encoding="utf-8",
+        index=False,
+    )
     # Create a Dask dataframe of research papers
     # papers_data = dask.dataframe.from_pandas(papers_df, npartitions=NUM_DF_PARTITIONS)
     # TODO: Perform further preprocessing steps here if need be

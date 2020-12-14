@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import json
+from importlib_metadata import metadata
 import numpy as np
 import os
 import pandas as pd
@@ -52,6 +53,17 @@ def gather_papers_data(
     return metadata_df
 
 
+def fill_in_missing_data(df: pd.DataFrame) -> pd.DataFrame:
+    for col in df.columns:
+        col_type = df[col].dtypes
+        if col_type in [np.dtype("float64"), np.dtype("float32")]:
+            df[col] = df[col].fillna(-1)
+        else:
+            df[col] = df[col].fillna("")
+
+    return df
+
+
 def filter_paper_by_keywords(text, keywords):
     text = [word.lower().strip() for word in text.split(" ")]
     for keyword in keywords:
@@ -63,26 +75,22 @@ def filter_paper_by_keywords(text, keywords):
 
 def main():
     # Setup models and cwds
-    nlp = spacy.load("en_core_web_sm")
+    # nlp = spacy.load("en_core_web_sm")
     os.chdir("../../../cord_19_dataset")
     print(f"CWD: {os.getcwd()}")
     # Get metadata of research papers
     start = time.time()
-    metadata_df = pd.read_csv("metadata.csv")
-    """
-    TODO: Seems like Panda fills in missing values with nan, even if its col is not a numerical type! 
-    Fix this by replacing this with empty string (or empty value of whatever type the col is)
-    """
+    metadata_df = fill_in_missing_data(pd.read_csv("metadata.csv"))
     metadata_dd = dask.dataframe.from_pandas(metadata_df, npartitions=NUM_DF_PARTITIONS)
     # Get body of research papers and store in df
     papers_df = gather_papers_data(metadata_df, metadata_dd, os.getcwd())
     end = time.time()
-    print(f"Preprocessing time (in seconds): {end - start}")  # Takes around ~59 seconds
-    print(f"Papers df size: {papers_df.shape}")
-    print(f"Papers df head: {papers_df.head()}")
+    print(
+        f"Preprocessing time (in seconds): {end - start}"
+    )  # Takes around ~59 seconds)
 
     if not os.path.exists(RESEARCH_PAPER_DATA_DIR):
-        os.mkdir(RESEARCH_PAPER_DATA_DIR)
+        os.makedirs(RESEARCH_PAPER_DATA_DIR)
     papers_df.to_csv(
         os.path.join(RESEARCH_PAPER_DATA_DIR, "research_papers.csv"),
         encoding="utf-8",
@@ -90,7 +98,7 @@ def main():
     )
     # Create a Dask dataframe of research papers
     # papers_data = dask.dataframe.from_pandas(papers_df, npartitions=NUM_DF_PARTITIONS)
-    # TODO: Perform further preprocessing steps here if need be
+    # NOTE: Perform further preprocessing steps here if need be
 
 
 if __name__ == "__main__":

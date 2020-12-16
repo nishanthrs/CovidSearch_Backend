@@ -118,9 +118,3 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/3.0/howto/static-files/
 
 STATIC_URL = "/static/"
-
-# Redis settings for asynchronous task queue
-REDIS_HOST = "localhost"
-REDIS_PORT = "6379"
-BROKER_URL = "redis://" + REDIS_HOST + ":" + REDIS_PORT + "/0"
-BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 3600}

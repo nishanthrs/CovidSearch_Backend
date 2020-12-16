@@ -62,15 +62,6 @@ def loop_over_hashes_and_remove_duplicates():
                 body={"ids": array_of_ids},
             )
             doc_ids = [doc["_id"] for doc in matching_docs["docs"]]
-            """
-            for doc in matching_docs["docs"]:
-                # In this example, we just print the duplicate docs.
-                # This code could be easily modified to delete duplicates
-                # here instead of printing them
-                # print("doc=%s\n" % doc)
-                doc_id = doc["_id"]
-                es.delete(index=COVID19_PAPERS_INDEX, doc_type=DATA_TYPE, id=doc_id)
-            """
 
             # Delete in bulk; much faster operation than deleting one by one: https://stackoverflow.com/questions/30859142/how-to-delete-documents-from-elasticsearch
             bulk_delete_body = [

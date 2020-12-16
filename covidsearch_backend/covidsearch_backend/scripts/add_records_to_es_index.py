@@ -13,7 +13,7 @@ from typing import Any, List
 nlp = spacy.load("en_core_web_sm")
 
 COVID19_PAPERS_INDEX = "covid19_papers"
-DATA_TYPE = "record"
+DATA_TYPE = "research_paper"
 UPLOAD_CHUNK_SIZE = 1000
 
 
@@ -25,7 +25,9 @@ def rec_to_actions(df, index, data_type):
 
 def _convert_df_to_json(df: pd.DataFrame) -> Any:
     json_res = df.to_json(orient="split")
-    json_data = [{"_id": idx, ""} for idx, paper in df.iterrows()]
+    json_data = [
+        {"_id": idx, "doc_type": DATA_TYPE, "doc": {}} for idx, paper in df.iterrows()
+    ]
 
 
 def upload_papers_to_es_idx(
@@ -55,7 +57,6 @@ def upload_papers_to_es_idx(
 
         idx = max_idx
     """
-
 
 
 def delete_index_data(es_idx: str) -> None:

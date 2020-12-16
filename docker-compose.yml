@@ -30,36 +30,6 @@ services:
         expose:
             - "5000"
 
-    worker:  # Worker to run asynchronous tasks
-        image: backend
-        container_name: covidresearch-backend-worker
-        command: rqworker --url ${BROKER_URL}
-        # env_file:
-            # ./config/project_vars.env.dev
-        environment:
-            - BROKER_URL=${BROKER_URL}
-        depends_on:
-            - backend
-            - redis
-        links:
-            - redis
-
-    scheduler:  # Scheduler to run cron job of parsing rss feeds
-        image: backend
-        container_name: covidresearch-backend-scheduler
-        command: rqscheduler --host ${REDIS_HOST} --port ${REDIS_PORT} --interval ${NUM_SECS}
-        # env_file:
-            # ./config/project_vars.env.dev
-        environment:
-            - REDIS_HOST=${REDIS_HOST}
-            - REDIS_PORT=${REDIS_PORT}
-            - NUM_SECS=${NUM_SECS}
-        depends_on:
-            - backend
-            - redis
-        links:
-            - redis
-
     elasticsearch: # Elasticsearch Instance
         container_name: covidresearch-search
         image: docker.elastic.co/elasticsearch/elasticsearch:7.8.0

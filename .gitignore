@@ -126,5 +126,5 @@ dmypy.json
 
 # Datasets
 cord_19_dataset/
-treatment_papers_cleaned.csv
 .vscode/
+covidsearch_backend/covidsearch_backend/scripts/rss_feeds_*

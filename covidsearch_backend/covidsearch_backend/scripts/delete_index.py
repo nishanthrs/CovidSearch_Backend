@@ -1,16 +1,19 @@
 #!/usr/bin/python3
+from typing import List
 
 from elasticsearch import Elasticsearch
 from add_records_to_es_index import COVID19_PAPERS_INDEX
 
 
-def delete_idx(es_hosts, idx_name) -> None:
+def delete_idx(es_hosts: List[str], idx_name: str) -> None:
     es = Elasticsearch(hosts=es_hosts)
-    es.indices.delete(index="test-index", ignore=[400, 404])
+    es.indices.delete(index=idx_name, ignore=[400, 404])
 
 
 def main():
-    delete_idx(["localhost"], COVID19_PAPERS_INDEX)
+    es_hosts = ["localhost"]
+    delete_idx(es_hosts, COVID19_PAPERS_INDEX)
+    print(f"Successfully deleted index: {COVID19_PAPERS_INDEX} on hosts: {es_hosts}!")
 
 
 if __name__ == "__main__":

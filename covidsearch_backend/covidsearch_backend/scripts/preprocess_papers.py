@@ -64,6 +64,21 @@ def fill_in_missing_data(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def standardize_col_types(df: pd.DataFrame) -> pd.DataFrame:
+    """TODO: Many cols are of mixed dtype object right now, 
+    which will certainly lead to issues when interacting with
+    this data in the future. Make sure all data in a given col
+    is of the same type!"""
+    for col in df.columns:
+        col_type = df[col].dtypes
+        print(f"Col and its type: {col}, {col_type}")
+        if col_type in [pd.np.dtype("float64"), pd.np.dtype("float32")]:
+            print(f"Found float col: {col_type}")
+            df[col] = df[col].fillna(-1)
+        else:
+            df[col] = df[col].fillna("")
+
+
 def filter_paper_by_keywords(text, keywords):
     text = [word.lower().strip() for word in text.split(" ")]
     for keyword in keywords:
@@ -77,10 +92,10 @@ def main():
     # Setup models and cwds
     # nlp = spacy.load("en_core_web_sm")
     os.chdir("../../../cord_19_dataset")
-    print(f"CWD: {os.getcwd()}")
     # Get metadata of research papers
     start = time.time()
     metadata_df = fill_in_missing_data(pd.read_csv("metadata.csv"))
+    # metadata_df = standardize_col_types(metadata_df)
     metadata_dd = dask.dataframe.from_pandas(metadata_df, npartitions=NUM_DF_PARTITIONS)
     # Get body of research papers and store in df
     papers_df = gather_papers_data(metadata_df, metadata_dd, os.getcwd())

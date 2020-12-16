@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-from logging import log
+import dask.dataframe as dd
 from elasticsearch import Elasticsearch, RequestError
 import json
 import pandas as pd
@@ -15,6 +15,7 @@ nlp = spacy.load("en_core_web_sm")
 COVID19_PAPERS_INDEX = "covid19_papers"
 DATA_TYPE = "research_paper"
 UPLOAD_CHUNK_SIZE = 1000
+RESEARCH_PAPER_DATA_DIR = "research_papers"
 
 
 def rec_to_actions(df, index, data_type):
@@ -23,11 +24,15 @@ def rec_to_actions(df, index, data_type):
         yield (json.dumps(record))
 
 
+"""
 def _convert_df_to_json(df: pd.DataFrame) -> Any:
-    json_res = df.to_json(orient="split")
+    json_res = df.to_json(orient="columns")
+    print(f"Research paper JSON data: {type(json_res)}")
     json_data = [
-        {"_id": idx, "doc_type": DATA_TYPE, "doc": {}} for idx, paper in df.iterrows()
+        {"_id": idx, "doc_type": DATA_TYPE, "doc": json_res}
+        for idx, paper in df.iterrows()
     ]
+"""
 
 
 def upload_papers_to_es_idx(
@@ -43,29 +48,39 @@ def upload_papers_to_es_idx(
         print(f"Index {es_idx} already exists; continue uploading papers to {es_idx}")
     # TODO: Catch other exceptions in the future: https://elasticsearch-py.readthedocs.io/en/master/exceptions.html
 
-    """
     idx = 0
     while idx < papers_df.shape[0]:
         if idx + chunk_size < papers_df.shape[0]:
             max_idx = idx + chunk_size
         else:
             max_idx = papers_df.shape[0]
-        print("Range: ", idx, max_idx)
 
-        r = es.bulk(rec_to_actions(papers_df[idx:max_idx], es_idx, data_type))
+        papers_df_chunk = papers_df.loc[idx:max_idx].compute()
+        r = es.bulk(rec_to_actions(papers_df_chunk, es_idx, data_type))
+        print(f"Uploaded papers from {idx} to {max_idx}")
         print(not r["errors"])
 
         idx = max_idx
-    """
-
-
-def delete_index_data(es_idx: str) -> None:
-    pass
 
 
 def main():
-    covid19_papers = pd.read_csv("research_paper_data/research_papers.csv")
-    upload_papers_to_es_idx(covid19_papers, COVID19_PAPERS_INDEX, ["localhost"])
+    os.chdir("../../../cord_19_dataset")
+    start_time = time.time()
+    """
+    covid19_papers_dfs = pd.read_csv(
+        os.path.join(RESEARCH_PAPER_DATA_DIR, "research_papers.csv"),
+        encoding="utf-8",
+        chunksize=50000,
+    )
+    """
+    covid19_papers_dd = dd.read_csv(
+        os.path.join(RESEARCH_PAPER_DATA_DIR, "research_papers.csv"), encoding="utf-8",
+    )
+    end_time = time.time()
+    print(f"Data load time: {end_time - start_time, type(covid19_papers_dd)}")
+    upload_papers_to_es_idx(covid19_papers_dd, COVID19_PAPERS_INDEX, ["localhost"])
+    end_time_2 = time.time()
+    print(f"Upload to idx time: {end_time_2 - end_time}")
 
 
 if __name__ == "__main__":

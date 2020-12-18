@@ -36,9 +36,10 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
             paper_data = paper["_source"]
             relevant_papers.append(
                 {
-                    "paper_id": paper_data["paper_id"],
                     "title": paper_data["title"],
+                    "authors": paper_data["authors"],
                     "abstract": paper_data["abstract"],
+                    "body": paper_data["body"],
                 }
             )
     except Exception as exc:

@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 
 import json
-from importlib_metadata import metadata
 import numpy as np
 import os
 import pandas as pd
@@ -41,6 +40,7 @@ def gather_papers_data(
     metadata_df: pd.DataFrame, metadata_dd: dask.dataframe, dir: str
 ) -> pd.DataFrame:
     """
+    # Single process
     metadata_df["body"] = metadata_df["pdf_json_files"].apply(
         lambda pdf_json_files: retrieve_paper_body_text(pdf_json_files)
     )
@@ -64,21 +64,6 @@ def fill_in_missing_data(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def standardize_col_types(df: pd.DataFrame) -> pd.DataFrame:
-    """TODO: Many cols are of mixed dtype object right now, 
-    which will certainly lead to issues when interacting with
-    this data in the future. Make sure all data in a given col
-    is of the same type!"""
-    for col in df.columns:
-        col_type = df[col].dtypes
-        print(f"Col and its type: {col}, {col_type}")
-        if col_type in [pd.np.dtype("float64"), pd.np.dtype("float32")]:
-            print(f"Found float col: {col_type}")
-            df[col] = df[col].fillna(-1)
-        else:
-            df[col] = df[col].fillna("")
-
-
 def filter_paper_by_keywords(text, keywords):
     text = [word.lower().strip() for word in text.split(" ")]
     for keyword in keywords:
@@ -94,22 +79,42 @@ def main():
     os.chdir("../../../cord_19_dataset")
     # Get metadata of research papers
     start = time.time()
-    metadata_df = fill_in_missing_data(pd.read_csv("metadata.csv"))
-    # metadata_df = standardize_col_types(metadata_df)
+    desired_types = {
+        "cord_uid": "str",
+        "sha": "str",
+        "source_x": "str",
+        "title": "str",
+        "doi": "str",
+        "pmcid": "str",
+        "pubmed_id": "str",
+        "license": "str",
+        "abstract": "str",
+        "authors": "str",
+        "journal": "str",
+        "mag_id": "float32",
+        "who_covidence_id": "str",
+        "arxiv_id": "str",
+        "pdf_json_files": "str",
+        "pmc_json_files": "str",
+        "url": "str",
+        "s2_id": "str",
+    }
+    metadata_df = pd.read_csv(
+        "metadata.csv", dtype=desired_types, parse_dates=["publish_time"]
+    )
+    metadata_df = fill_in_missing_data(metadata_df)
     metadata_dd = dask.dataframe.from_pandas(metadata_df, npartitions=NUM_DF_PARTITIONS)
     # Get body of research papers and store in df
     papers_df = gather_papers_data(metadata_df, metadata_dd, os.getcwd())
     end = time.time()
     print(
         f"Preprocessing time (in seconds): {end - start}"
-    )  # Takes around ~59 seconds)
+    )  # Takes around ~60-65 seconds)
 
     if not os.path.exists(RESEARCH_PAPER_DATA_DIR):
         os.makedirs(RESEARCH_PAPER_DATA_DIR)
     papers_df.to_csv(
-        os.path.join(RESEARCH_PAPER_DATA_DIR, "research_papers.csv"),
-        encoding="utf-8",
-        index=False,
+        os.path.join(RESEARCH_PAPER_DATA_DIR, "research_papers.csv"), encoding="utf-8",
     )
     # Create a Dask dataframe of research papers
     # papers_data = dask.dataframe.from_pandas(papers_df, npartitions=NUM_DF_PARTITIONS)

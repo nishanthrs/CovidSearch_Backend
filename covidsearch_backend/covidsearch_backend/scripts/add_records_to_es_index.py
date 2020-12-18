@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import csv
 import dask.dataframe as dd
 from elasticsearch import Elasticsearch, RequestError
 import json
@@ -24,17 +25,6 @@ def rec_to_actions(df, index, data_type):
         yield (json.dumps(record))
 
 
-"""
-def _convert_df_to_json(df: pd.DataFrame) -> Any:
-    json_res = df.to_json(orient="columns")
-    print(f"Research paper JSON data: {type(json_res)}")
-    json_data = [
-        {"_id": idx, "doc_type": DATA_TYPE, "doc": json_res}
-        for idx, paper in df.iterrows()
-    ]
-"""
-
-
 def upload_papers_to_es_idx(
     papers_df, es_idx, es_hosts, data_type=DATA_TYPE, chunk_size=UPLOAD_CHUNK_SIZE
 ):
@@ -49,6 +39,7 @@ def upload_papers_to_es_idx(
     # TODO: Catch other exceptions in the future: https://elasticsearch-py.readthedocs.io/en/master/exceptions.html
 
     idx = 0
+    print("Shape: ", papers_df.shape[0].compute())
     while idx < papers_df.shape[0]:
         if idx + chunk_size < papers_df.shape[0]:
             max_idx = idx + chunk_size
@@ -74,7 +65,11 @@ def main():
     )
     """
     covid19_papers_dd = dd.read_csv(
-        os.path.join(RESEARCH_PAPER_DATA_DIR, "research_papers.csv"), encoding="utf-8",
+        os.path.join(RESEARCH_PAPER_DATA_DIR, "research_papers.csv"),
+        encoding="utf-8",
+        error_bad_lines=False,
+        quoting=csv.QUOTE_NONE,
+        dtype={"s2_id": "object"},
     )
     end_time = time.time()
     print(f"Data load time: {end_time - start_time, type(covid19_papers_dd)}")

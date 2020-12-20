@@ -4,13 +4,13 @@
 
 import hashlib
 from elasticsearch import Elasticsearch
-from add_records_to_es_index import COVID19_PAPERS_INDEX, DATA_TYPE
+from build_research_paper_index import COVID19_PAPERS_INDEX, DATA_TYPE
 
 es = Elasticsearch(["localhost"])
 dict_of_duplicate_docs = {}
 # The following line defines the fields that will be
 # used to determine if a document is a duplicate
-keys_to_include_in_hash = ["paper_id"]
+keys_to_include_in_hash = ["cord_uid"]
 # Process documents returned by the current search/scroll
 def populate_dict_of_duplicate_docs(hits):
     for item in hits:

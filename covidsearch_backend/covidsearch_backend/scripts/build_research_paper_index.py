@@ -53,8 +53,8 @@ def gather_papers_data(
     return metadata_df
 
 
-def clean_papers_data(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
-    return df.dropna(subset=cols)
+def remove_papers_with_null_cols(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
+    return df.dropna(subset=cols, how="all")
 
 
 def fill_in_missing_data(df: pd.DataFrame) -> pd.DataFrame:
@@ -72,7 +72,9 @@ def preprocess_papers(metadata_filename) -> pd.DataFrame:
     metadata_cols = list(pd.read_csv(metadata_filename, nrows=0).columns)
     metadata_cols_dtypes = {col: str for col in metadata_cols}
     metadata_df = pd.read_csv(metadata_filename, dtype=metadata_cols_dtypes)
-    metadata_df = clean_papers_data(metadata_df, ["title"])
+    print(f"Metadata df shape: {metadata_df.shape}")
+    metadata_df = remove_papers_with_null_cols(metadata_df, ["title"])
+    metadata_df = remove_papers_with_null_cols(metadata_df, ["abstract", "url"])
     metadata_df = fill_in_missing_data(metadata_df)
     metadata_dd = dask.dataframe.from_pandas(metadata_df, npartitions=NUM_DF_PARTITIONS)
     # Get body of research papers and store in df
@@ -112,7 +114,11 @@ def upload_papers_to_es_idx(
         papers_df_chunk = papers_df.loc[idx:max_idx]
         r = es.bulk(rec_to_actions(papers_df_chunk, es_idx, data_type))
         print(f"Uploaded papers from {idx} to {max_idx}")
-        print(f"No errors: {not r['errors']}")
+        es_error = not r["errors"]
+        if not es_error:
+            print(f"No errors")
+        else:
+            print(f"Errors: {r['errors']}")
 
         idx = max_idx
 

@@ -19,16 +19,19 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
         # Simple search by title
         search_tasks = []
         title_match_query = {"match": {"title": {"query": query}}}
-        regular_match_query = {
-            "multi_match": {"query": query, "fields": ["title", "abstract", "body"],}
+        fuzzy_multimatch_query = {
+            "multi_match": {
+                "query": query,
+                "fields": ["title^2", "abstract^2", "body"],
+                "fuzziness": "AUTO",
+            }
         }
-        fuzzy_match_query = {"fuzzy": {"title": {"value": query, "fuzziness": "AUTO"}}}
         search_coroutine = es.search(
             index="covid19_papers",
             body={
                 "from": 0,
                 "size": NUM_INITIAL_SEARCH_RESULTS,
-                "query": regular_match_query,
+                "query": fuzzy_multimatch_query,
             },
         )
         search_tasks.append(search_coroutine)
@@ -61,7 +64,7 @@ def search_covid19_papers(request: HttpRequest) -> JsonResponse:
         "localhost:9200",
     ]  # IP address or domain name of Elasticsearch index
     index = "covid19_papers"
-    query = request.GET["query"]
+    query = request.GET["query"].lower()
 
     # Run async method in synchronous method by creating event loop
     loop = asyncio.new_event_loop()

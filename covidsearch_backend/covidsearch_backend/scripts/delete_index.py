@@ -2,7 +2,7 @@
 from typing import List
 
 from elasticsearch import Elasticsearch
-from add_records_to_es_index import COVID19_PAPERS_INDEX
+from build_research_paper_index import COVID19_PAPERS_INDEX
 
 
 def delete_idx(es_hosts: List[str], idx_name: str) -> None:

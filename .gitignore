@@ -124,6 +124,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Text files (important ones to be committed will be .md)
+*.txt
+
 # Datasets
 cord_19_dataset/
 .vscode/

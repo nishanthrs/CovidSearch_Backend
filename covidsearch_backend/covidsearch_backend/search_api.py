@@ -18,7 +18,7 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
         es = AsyncElasticsearch(hosts=hosts)
         # Simple search by title
         search_tasks = []
-        title_match_query = {"match": {"title": {"query": query}}}
+        # title_match_query = {"match": {"title": {"query": query}}}
         fuzzy_multimatch_query = {
             "multi_match": {
                 "query": query,
@@ -39,8 +39,8 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
         (res,) = await asyncio.gather(*search_tasks)
 
         relevant_papers = []
+        print(f"First result: {res['hits']['hits'][0]}")
         for paper in res["hits"]["hits"]:
-            # TODO: Create object/model for paper response
             paper_data = paper["_source"]
             relevant_papers.append(
                 {

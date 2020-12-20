@@ -27,6 +27,7 @@ services:
         environment:
             - ES_HOST=elasticsearch
             - ES_PORT=9200
+            - ES_JAVA_OPTS="-Xms2g -Xmx2g" ./bin/elasticsearch
         expose:
             - "5000"
 

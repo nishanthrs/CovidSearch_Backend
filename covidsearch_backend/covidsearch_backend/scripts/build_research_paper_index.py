@@ -3,7 +3,7 @@
 import dask.dataframe
 from datetime import datetime
 from dateutil import parser
-from elasticsearch import Elasticsearch, RequestError
+from elasticsearch import Elasticsearch, RequestError, TransportError
 import json
 import numpy as np
 import os
@@ -85,7 +85,11 @@ def preprocess_papers(metadata_filename) -> pd.DataFrame:
 
 def rec_to_actions(df, index, data_type):
     for record in df.to_dict(orient="records"):
-        yield ('{ "index" : { "_index" : "%s", "_type" : "%s" }}' % (index, data_type))
+        record_id = record["cord_uid"]
+        yield (
+            '{ "index" : { "_index" : "%s", "_type" : "%s", "_id": "%s" }}'
+            % (index, data_type, record_id)
+        )
         yield (json.dumps(record))
 
 
@@ -95,32 +99,47 @@ def upload_papers_to_es_idx(
     """
     Uploading Pandas DF to Elasticsearch Index: https://stackoverflow.com/questions/49726229/how-to-export-pandas-data-to-elasticsearch
     """
+    # TODO: Catch other exceptions in the future: https://elasticsearch-py.readthedocs.io/en/master/exceptions.html
     try:
         es = Elasticsearch(hosts=es_hosts)
         es.indices.create(index=es_idx, ignore=400)
     except RequestError:
         print(f"Index {es_idx} already exists; continue uploading papers to {es_idx}")
 
-    # TODO: Catch other exceptions in the future: https://elasticsearch-py.readthedocs.io/en/master/exceptions.html
+    try:
+        idx = 0
+        while idx < papers_df.shape[0]:
+            if idx + chunk_size < papers_df.shape[0]:
+                max_idx = idx + chunk_size
+            else:
+                max_idx = papers_df.shape[0]
 
-    # If not split into chunks, 413 exception is thrown: https://github.com/elastic/elasticsearch/issues/2902
-    idx = 0
-    while idx < papers_df.shape[0]:
-        if idx + chunk_size < papers_df.shape[0]:
-            max_idx = idx + chunk_size
-        else:
-            max_idx = papers_df.shape[0]
+            papers_df_chunk = papers_df.loc[idx:max_idx]
+            r = es.bulk(rec_to_actions(papers_df_chunk, es_idx, data_type))
+            print(f"Uploaded papers from {idx} to {max_idx}")
+            idx = max_idx
 
-        papers_df_chunk = papers_df.loc[idx:max_idx]
-        r = es.bulk(rec_to_actions(papers_df_chunk, es_idx, data_type))
-        print(f"Uploaded papers from {idx} to {max_idx}")
-        es_error = not r["errors"]
-        if not es_error:
-            print(f"No errors")
-        else:
-            print(f"Errors: {r['errors']}")
-
-        idx = max_idx
+            es_error = not r["errors"]
+            if not es_error:
+                print(f"No errors")
+            else:
+                print(f"Errors: {r['errors']}")
+    except TransportError as te:
+        transport_error_413_url = "https://github.com/elastic/elasticsearch/issues/2902"
+        transport_error_429_urls = [
+            "https://stackoverflow.com/questions/61870751/circuit-breaking-exception-parent-data-too-large-data-for-http-request",
+            "https://github.com/elastic/elasticsearch/issues/31197",
+        ]
+        if te.status_code == 413:
+            print(
+                f"Transport error with status code 413. Chunk size is too large, so try reducing chunk size constant or increase http.max_content_length in the yml file. More info here: {transport_error_413_url}"
+            )
+        elif te.status_code == 429:
+            print(
+                f"Transport error with status code 429. Elasticsearch's JVM heap size is too small, so try increasing ES_HEAP_SIZE env var in docker-compose.yml. More info here: {transport_error_429_urls}"
+            )
+        print(f"Error stacktrace: {te.error, te.info}")
+        raise te
 
 
 def main():
@@ -129,10 +148,12 @@ def main():
     preprocessing_end = time.time()
     print(
         f"Preprocessing time (in seconds): {preprocessing_end - start}"
-    )  # Takes around ~60-65 seconds)
+    )  # Takes ~60-65 seconds
     upload_papers_to_es_idx(research_papers_df, COVID19_PAPERS_INDEX, ["localhost"])
     build_es_index_end = time.time()
-    print(f"Upload to elasticsearch idx: {build_es_index_end - preprocessing_end}")
+    print(
+        f"Upload to elasticsearch idx: {build_es_index_end - preprocessing_end}"
+    )  # Takes ~240-270 seconds
 
 
 if __name__ == "__main__":

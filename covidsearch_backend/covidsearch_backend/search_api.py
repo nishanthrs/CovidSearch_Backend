@@ -18,12 +18,17 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
         es = AsyncElasticsearch(hosts=hosts)
         # Simple search by title
         search_tasks = []
+        title_match_query = {"match": {"title": {"query": query}}}
+        regular_match_query = {
+            "multi_match": {"query": query, "fields": ["title", "abstract", "body"],}
+        }
+        fuzzy_match_query = {"fuzzy": {"title": {"value": query, "fuzziness": "AUTO"}}}
         search_coroutine = es.search(
             index="covid19_papers",
             body={
                 "from": 0,
                 "size": NUM_INITIAL_SEARCH_RESULTS,
-                "query": {"match": {"title": {"query": query}}},
+                "query": regular_match_query,
             },
         )
         search_tasks.append(search_coroutine)
@@ -40,6 +45,7 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
                     "authors": paper_data["authors"],
                     "abstract": paper_data["abstract"],
                     "body": paper_data["body"],
+                    "url": paper_data["url"],
                 }
             )
     except Exception as exc:

@@ -22,8 +22,9 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
         fuzzy_multimatch_query = {
             "multi_match": {
                 "query": query,
-                "fields": ["title^2", "abstract^2", "body"],
+                "fields": ["title^2", "abstract", "body"],
                 "fuzziness": "AUTO",
+                "operator": "AND",
             }
         }
         search_coroutine = es.search(
@@ -41,6 +42,7 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
         relevant_papers = []
         print(f"First result: {res['hits']['hits'][0]}")
         for paper in res["hits"]["hits"]:
+            paper_relevance_score = paper["_score"]
             paper_data = paper["_source"]
             relevant_papers.append(
                 {
@@ -49,6 +51,7 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
                     "abstract": paper_data["abstract"],
                     "body": paper_data["body"],
                     "url": paper_data["url"],
+                    "score": paper_relevance_score,
                 }
             )
     except Exception as exc:

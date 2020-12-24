@@ -118,12 +118,7 @@ def upload_papers_to_es_idx(
             r = es.bulk(rec_to_actions(papers_df_chunk, es_idx, data_type))
             print(f"Uploaded papers from {idx} to {max_idx}")
             idx = max_idx
-
-            es_error = not r["errors"]
-            if not es_error:
-                print(f"No errors")
-            else:
-                print(f"Errors: {r['errors']}")
+            print(f"Errors: {r['errors']}")
     except TransportError as te:
         transport_error_413_url = "https://github.com/elastic/elasticsearch/issues/2902"
         transport_error_429_urls = [

@@ -9,6 +9,8 @@ import numpy as np
 import os
 import pandas as pd
 from pprint import pprint
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+from sklearn.feature_extraction.text import TfidfVectorizer
 import time
 from typing import List
 
@@ -17,6 +19,11 @@ RESEARCH_PAPER_DATA_DIR = "research_papers"
 COVID19_PAPERS_INDEX = "covid19_papers"
 DATA_TYPE = "research_paper"
 UPLOAD_CHUNK_SIZE = 1000
+DEEP_EMBEDDINGS_MAP = {
+    "cord19": "<insert_filepath_here>",  # 768-length vector
+    "distilbert": "<insert_filepath_here>",  # 256-length vector
+    "bert": "<insert_filepath_here>",  # 768-length vector (1024 for large)
+}
 
 
 def retrieve_paper_body_text(pdf_json_files) -> str:
@@ -66,8 +73,26 @@ def fill_in_missing_data(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def generate_embeddings(embedding_type: str, docs: List[str]) -> List[List[float]]:
+    if embedding_type == "tfidf":
+        tfidf_vectorizer = TfidfVectorizer()
+        doc_embeddings = tfidf_vectorizer.fit_transform(docs)
+    else:
+        try:
+            # TODO: Correctly load and generate embeddings using CORD19 embeddings and HuggingFace transformers lib
+            embeddings = DEEP_EMBEDDINGS_MAP[embedding_type]
+        except KeyError:
+            raise KeyError(
+                f"Embedding type {embedding_type} nonexistent in embedding map: {DEEP_EMBEDDINGS_MAP}. Make sure the embedding type exists as a key in the embedding map."
+            )
+
+    return doc_embeddings
+
+
 def preprocess_papers(metadata_filename) -> pd.DataFrame:
+    # Change current working dir
     os.chdir("../../../cord_19_dataset")
+
     # Get metadata of research papers
     metadata_cols = list(pd.read_csv(metadata_filename, nrows=0).columns)
     metadata_cols_dtypes = {col: str for col in metadata_cols}
@@ -77,9 +102,24 @@ def preprocess_papers(metadata_filename) -> pd.DataFrame:
     metadata_df = remove_papers_with_null_cols(metadata_df, ["abstract", "url"])
     metadata_df = fill_in_missing_data(metadata_df)
     metadata_dd = dask.dataframe.from_pandas(metadata_df, npartitions=NUM_DF_PARTITIONS)
+
     # Get body of research papers and store in df
     research_papers_df = gather_papers_data(metadata_df, metadata_dd, os.getcwd())
+    research_papers_dd = dask.dataframe.from_pandas(
+        research_papers_df, npartitions=NUM_DF_PARTITIONS
+    )
+
+    # Get embeddings of each research paper's title and abstract (embeddings of body text would lose too much info due to current ineffective pooling techniques)
+    embedding_type = "tfidf"
+    research_papers_df[f"title_{embedding_type}"] = research_papers_dd.map_partitions(
+        lambda df: generate_embeddings(embedding_type, df["title"])
+    ).compute(scheduler="processes")
+    research_papers_df[f"abstract_{embedding_type}"] = research_papers_dd.map_paritions(
+        lambda df: generate_embeddings(embedding_type, df["abstract"])
+    ).compute(scheduler="processes")
+
     print(f"Research papers df shape: {research_papers_df.shape}")
+
     return research_papers_df
 
 

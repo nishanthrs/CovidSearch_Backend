@@ -5,9 +5,10 @@ import os
 
 from django.http import HttpRequest, HttpResponseNotAllowed, JsonResponse
 from elasticsearch import Elasticsearch, AsyncElasticsearch
+from sklearn.feature_extraction.text import TfidfVectorizer
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-NUM_INITIAL_SEARCH_RESULTS = 100
+NUM_INITIAL_SEARCH_RESULTS = 20
 
 
 async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) -> Dict:
@@ -25,6 +26,20 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
                 "fields": ["title^2", "abstract", "body"],
                 "fuzziness": "AUTO",
                 "operator": "AND",
+            }
+        }
+        # TODO: Modify below query to use with preprocessed embeddings from build_research_paper_index script
+        tfidf_vectorizer = TfidfVectorizer()
+        query_vector = tfidf_vectorizer.transform(query)
+        script_query = {
+            "script_score": {
+                "query": {
+                    "match_all": {}
+                },  # TODO: Maybe replace with fuzzy_multimatch_query since we're using embeddings mainly for better ranking, not better discoverability?
+                "script": {
+                    "source": "cosineSimilarity(params.query_vector, doc['text_vector']) + 1.0",
+                    "params": {"query_vector": query_vector},
+                },
             }
         }
         search_coroutine = es.search(

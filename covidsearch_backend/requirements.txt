@@ -7,6 +7,7 @@ gunicorn
 elasticsearch>=7.8.0
 html5lib==1.1
 feedparser
+pandas==1.1.4
 tensorflow>=2.3.1
 --find-links https://download.pytorch.org/whl/torch_stable.html
 torch==1.7.0+cpu
@@ -14,7 +15,7 @@ torch==1.7.0+cpu
 torchaudio==0.7.0
 --find-links https://download.pytorch.org/whl/torch_stable.html
 torchvision==0.8.1+cpu
-transformers==3.5.1
-pandas==1.1.4
+transformers>=3.5.1
+scikit-learn>=0.24.0
 spacy>=2.2.0,<3.0.0
 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-2.2.0/en_core_web_sm-2.2.0.tar.gz#egg=en_core_web_sm

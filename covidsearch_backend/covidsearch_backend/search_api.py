@@ -42,6 +42,7 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
                 },
             }
         }
+        # TODO: Figure out way to prioritize ranking for papers with non-empty abstract and urls
         search_coroutine = es.search(
             index="covid19_papers",
             body={

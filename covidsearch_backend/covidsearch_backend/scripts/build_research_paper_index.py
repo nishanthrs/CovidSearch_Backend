@@ -60,23 +60,23 @@ def gather_papers_data(
     return metadata_df
 
 
-def remove_papers_with_null_cols(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
-    return df.dropna(subset=cols, how="all")
+def remove_papers_with_null_cols(df: pd.DataFrame, cols: List[str]) -> None:
+    df.dropna(subset=cols, how="all", inplace=True)
 
 
-def fill_in_missing_data(df: pd.DataFrame) -> pd.DataFrame:
+def fill_in_missing_data(df: pd.DataFrame) -> None:
     cols_with_missing_vals = df.columns[df.isna().any()].tolist()
     print(f"Cols with missing values: {cols_with_missing_vals}")
-    df = df.fillna("")
+    df.fillna("", inplace=True)
     cols_with_missing_vals = df.columns[df.isna().any()].tolist()
     print(f"Cols with missing values after: {cols_with_missing_vals}")
-    return df
 
 
-def generate_embeddings(embedding_type: str, docs: List[str]) -> List[List[float]]:
+def generate_embeddings(embedding_type: str, docs: pd.Series) -> pd.Series:
     if embedding_type == "tfidf":
         tfidf_vectorizer = TfidfVectorizer()
         doc_embeddings = tfidf_vectorizer.fit_transform(docs)
+        print(f"Title embeddings shape: {doc_embeddings.toarray()}")
     else:
         try:
             # TODO: Correctly load and generate embeddings using CORD19 embeddings and HuggingFace transformers lib
@@ -98,18 +98,25 @@ def preprocess_papers(metadata_filename) -> pd.DataFrame:
     metadata_cols_dtypes = {col: str for col in metadata_cols}
     metadata_df = pd.read_csv(metadata_filename, dtype=metadata_cols_dtypes)
     print(f"Metadata df shape: {metadata_df.shape}")
-    metadata_df = remove_papers_with_null_cols(metadata_df, ["title"])
-    metadata_df = remove_papers_with_null_cols(metadata_df, ["abstract", "url"])
-    metadata_df = fill_in_missing_data(metadata_df)
+    print(f"Memory usage of metadata_df: {metadata_df.memory_usage(deep=True).sum()}")
+    remove_papers_with_null_cols(metadata_df, ["title"])
+    remove_papers_with_null_cols(metadata_df, ["abstract", "url"])
+    fill_in_missing_data(metadata_df)
     metadata_dd = dask.dataframe.from_pandas(metadata_df, npartitions=NUM_DF_PARTITIONS)
+    print(f"Memory usage of metadata_df: {metadata_df.memory_usage(deep=True).sum()}")
 
     # Get body of research papers and store in df
     research_papers_df = gather_papers_data(metadata_df, metadata_dd, os.getcwd())
+    print(
+        f"Memory usage of research_papers_df: {research_papers_df.memory_usage(deep=True).sum()}"
+    )
+    # TODO: MemoryError here; figure out way to prevent this
     research_papers_dd = dask.dataframe.from_pandas(
         research_papers_df, npartitions=NUM_DF_PARTITIONS
     )
 
     # Get embeddings of each research paper's title and abstract (embeddings of body text would lose too much info due to current ineffective pooling techniques)
+    """
     embedding_type = "tfidf"
     research_papers_df[f"title_{embedding_type}"] = research_papers_dd.map_partitions(
         lambda df: generate_embeddings(embedding_type, df["title"])
@@ -117,6 +124,7 @@ def preprocess_papers(metadata_filename) -> pd.DataFrame:
     research_papers_df[f"abstract_{embedding_type}"] = research_papers_dd.map_paritions(
         lambda df: generate_embeddings(embedding_type, df["abstract"])
     ).compute(scheduler="processes")
+    """
 
     print(f"Research papers df shape: {research_papers_df.shape}")
 

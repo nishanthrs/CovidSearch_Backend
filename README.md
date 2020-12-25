@@ -54,10 +54,12 @@ Step 2: Transform search query into tf-idf vector: `TfidfVectorizer().transform(
 Step 3: Calculate the cosine similarity b/w the query vector and all the doc vectors. Sort by closest:  
 
 ```python3
-cosine_similarity(X,query_vec)
+results = cosine_similarity(X,query_vec)
 for i in results.argsort()[-10:][::-1]:
     print(df.iloc[i,0],"--",df.iloc[i,1])
-```
+```  
+
+Custom Python Script for Elasticsearch Ranking: https://stackoverflow.com/questions/20974964/python-custom-scripting-in-elasticsearch  
 
 Read more about CORS here (restricting clients that can call this API):  
 https://pypi.org/project/django-cors-headers/

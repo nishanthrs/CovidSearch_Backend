@@ -67,6 +67,7 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
                     "abstract": paper_data["abstract"],
                     "body": paper_data["body"],
                     "url": paper_data["url"],
+                    "publish_time": paper_data["publish_time"],
                     "score": paper_relevance_score,
                 }
             )

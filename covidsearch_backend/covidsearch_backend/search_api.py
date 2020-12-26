@@ -29,7 +29,8 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
             }
         }
         # TODO: Modify below query to use with preprocessed embeddings from build_research_paper_index script
-        tfidf_vectorizer = TfidfVectorizer()
+        """
+        tfidf_vectorizer = pickle.load(open("models/tfidf_title_vectorizer.pickle", "rb"))
         query_vector = tfidf_vectorizer.transform(query)
         script_query = {
             "script_score": {
@@ -42,6 +43,7 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
                 },
             }
         }
+        """
         # TODO: Figure out way to prioritize ranking for papers with non-empty abstract and urls
         search_coroutine = es.search(
             index="covid19_papers",

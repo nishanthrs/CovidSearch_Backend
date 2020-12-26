@@ -8,7 +8,7 @@ import json
 import numpy as np
 import os
 import pandas as pd
-from pprint import pprint
+import pickle
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 from sklearn.feature_extraction.text import TfidfVectorizer
 import time
@@ -72,10 +72,14 @@ def fill_in_missing_data(df: pd.DataFrame) -> None:
     print(f"Cols with missing values after: {cols_with_missing_vals}")
 
 
-def generate_embeddings(embedding_type: str, docs: pd.Series) -> pd.Series:
+def generate_embeddings(
+    embedding_type: str, embedding_model_filename: str, docs: pd.Series
+) -> pd.Series:
     if embedding_type == "tfidf":
         tfidf_vectorizer = TfidfVectorizer()
         doc_embeddings = tfidf_vectorizer.fit_transform(docs)
+        with open(embedding_model_filename, "wb") as ef:
+            pickle.dump(tfidf_vectorizer, ef)
         print(f"Title embeddings shape: {doc_embeddings.toarray()}")
     else:
         try:
@@ -119,10 +123,10 @@ def preprocess_papers(metadata_filename) -> pd.DataFrame:
     """
     embedding_type = "tfidf"
     research_papers_df[f"title_{embedding_type}"] = research_papers_dd.map_partitions(
-        lambda df: generate_embeddings(embedding_type, df["title"])
+        lambda df: generate_embeddings(embedding_type, "../covidsearch_backend/covidsearch_backend/models/tfidf_title_vectorizer.pk", df["title"])
     ).compute(scheduler="processes")
     research_papers_df[f"abstract_{embedding_type}"] = research_papers_dd.map_paritions(
-        lambda df: generate_embeddings(embedding_type, df["abstract"])
+        lambda df: generate_embeddings(embedding_type, "../covidsearch_backend/covidsearch_backend/models/tfidf_abstract_vectorizer.pk", df["abstract"])
     ).compute(scheduler="processes")
     """
 

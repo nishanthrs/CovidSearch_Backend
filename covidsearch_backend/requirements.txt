@@ -17,5 +17,3 @@ torchaudio==0.7.0
 torchvision==0.8.1+cpu
 transformers>=3.5.1
 scikit-learn>=0.24.0
-spacy>=2.2.0,<3.0.0
-https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-2.2.0/en_core_web_sm-2.2.0.tar.gz#egg=en_core_web_sm

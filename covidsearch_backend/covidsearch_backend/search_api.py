@@ -75,6 +75,7 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
             )
     except Exception as exc:
         # TODO: Haven't decided how to handle errors in Elasticsearch
+        # Raise IndexNotFound exception on 404 status code Not Found
         raise exc
 
     return relevant_papers

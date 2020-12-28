@@ -98,26 +98,42 @@ def preprocess_papers(metadata_filename) -> pd.DataFrame:
     os.chdir("../../../cord_19_dataset")
 
     # Get metadata of research papers
-    metadata_cols = list(pd.read_csv(metadata_filename, nrows=0).columns)
+    metadata_cols = [
+        "cord_uid",
+        "title",
+        "authors",
+        "abstract",
+        "publish_time",
+        "url",
+        "journal",
+        "pdf_json_files",
+    ]
     metadata_cols_dtypes = {col: str for col in metadata_cols}
     metadata_df = pd.read_csv(metadata_filename, dtype=metadata_cols_dtypes)
     print(f"Metadata df shape: {metadata_df.shape}")
-    print(f"Memory usage of metadata_df: {metadata_df.memory_usage(deep=True).sum()}")
+    print(
+        f"Memory usage of metadata_df before clean: {metadata_df.memory_usage(deep=True).sum()}"
+    )
     remove_papers_with_null_cols(metadata_df, ["title"])
     remove_papers_with_null_cols(metadata_df, ["abstract", "url"])
     fill_in_missing_data(metadata_df)
     metadata_dd = dask.dataframe.from_pandas(metadata_df, npartitions=NUM_DF_PARTITIONS)
-    print(f"Memory usage of metadata_df: {metadata_df.memory_usage(deep=True).sum()}")
+    print(
+        f"Memory usage of metadata_df after clean: {metadata_df.memory_usage(deep=True).sum()}"
+    )
 
     # Get body of research papers and store in df
     research_papers_df = gather_papers_data(metadata_df, metadata_dd, os.getcwd())
+    print(f"Research papers df shape: {research_papers_df.shape}")
     print(
         f"Memory usage of research_papers_df: {research_papers_df.memory_usage(deep=True).sum()}"
     )
     # TODO: MemoryError here; figure out way to prevent this
+    """
     research_papers_dd = dask.dataframe.from_pandas(
         research_papers_df, npartitions=NUM_DF_PARTITIONS
     )
+    """
 
     # Get embeddings of each research paper's title and abstract (embeddings of body text would lose too much info due to current ineffective pooling techniques)
     """
@@ -129,8 +145,6 @@ def preprocess_papers(metadata_filename) -> pd.DataFrame:
         lambda df: generate_embeddings(embedding_type, "../covidsearch_backend/covidsearch_backend/models/tfidf_abstract_vectorizer.pk", df["abstract"])
     ).compute(scheduler="processes")
     """
-
-    print(f"Research papers df shape: {research_papers_df.shape}")
 
     return research_papers_df
 

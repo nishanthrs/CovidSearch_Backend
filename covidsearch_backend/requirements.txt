@@ -6,8 +6,10 @@ django-cors-headers==3.5.0
 gunicorn
 elasticsearch>=7.8.0
 html5lib==1.1
+fastparquet>=0.4.0
 feedparser
-pandas==1.1.4
+pandas>=1.1.4
+pyarrow>=2.0.0
 tensorflow>=2.3.1
 --find-links https://download.pytorch.org/whl/torch_stable.html
 torch==1.7.0+cpu

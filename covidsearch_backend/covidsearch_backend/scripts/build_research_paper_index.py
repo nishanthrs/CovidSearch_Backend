@@ -19,7 +19,6 @@ NUM_CPU_CORES = multiprocessing.cpu_count()
 NUM_DF_PARTITIONS = 30
 RESEARCH_PAPER_DATA_DIR = "research_papers"
 COVID19_PAPERS_INDEX = "covid19_papers"
-DATA_TYPE = "research_paper"
 UPLOAD_CHUNK_SIZE = 1000
 DEEP_EMBEDDINGS_MAP = {
     "cord19": "<insert_filepath_here>",  # 768-length vector
@@ -38,13 +37,15 @@ _gather_papers_data
 """
 
 
-def retrieve_paper_body_text(pdf_json_files) -> str:
+def retrieve_paper_body_text(pdf_json_files: str) -> str:
+    # print(f"WTF is the dir wrong: {os.getcwd()}")
     if pdf_json_files and type(pdf_json_files) is str:
         for json_path in pdf_json_files.split("; "):
             paper_body_text = []
+            abs_json_path = os.path.join(os.getcwd(), json_path)
 
             try:
-                with open(json_path) as paper_json:
+                with open(abs_json_path) as paper_json:
                     full_text_dict = json.load(paper_json)
 
                     for paragraph_dict in full_text_dict["body_text"]:
@@ -56,7 +57,7 @@ def retrieve_paper_body_text(pdf_json_files) -> str:
                 if paper_body_text:  # Stop searching through pdf_json_files
                     return "\n".join(paper_body_text)
             except FileNotFoundError as e:
-                print(f"Failed on {json_path} with exception: {str(e)}")
+                print(f"Failed on {abs_json_path} with exception: {str(e)}")
 
     return ""
 
@@ -65,15 +66,8 @@ def retrieve_paper_body_text_for_series(pdf_json_files_series: pd.Series) -> pd.
     return pdf_json_files_series.apply(lambda pdf_json_files: retrieve_paper_body_text(pdf_json_files))
 
 
-def gather_papers_data(metadata_df: pd.DataFrame, dir: str) -> dd:
+def gather_papers_data(metadata_df: pd.DataFrame) -> dd:
     metadata_dd = dd.from_pandas(metadata_df, npartitions=NUM_DF_PARTITIONS)
-    """
-    metadata_df["body"] = metadata_dd.map_partitions(
-        lambda df: df["pdf_json_files"].apply(
-            lambda pdf_json_files: retrieve_paper_body_text(pdf_json_files)
-        )
-    ).compute(scheduler="processes")
-    """
     return metadata_dd.map_partitions(
         lambda df: df.assign(body=retrieve_paper_body_text_for_series(df.pdf_json_files))
     )
@@ -113,6 +107,7 @@ def generate_embeddings(embedding_type: str, embedding_model_filename: str, docs
 def preprocess_papers(metadata_filename) -> pd.DataFrame:
     # Change current working dir
     os.chdir("../../../cord_19_dataset")
+    print(f"CWD: {os.getcwd()}")
 
     # Get metadata of research papers
     metadata_cols = [
@@ -136,10 +131,10 @@ def preprocess_papers(metadata_filename) -> pd.DataFrame:
     print(f"Memory usage of metadata_df after clean: {metadata_df.memory_usage(deep=True).sum()}")
 
     # Get body of research papers and store in df
-    # TODO: Rename gather_papers_data and put below embedding computations in it
-    metadata_dd = gather_papers_data(metadata_df, os.getcwd())
-    metadata_dd = metadata_dd.repartition(partition_size="100MB")
-    print(f"# partitions in research papers' metadata dd: {metadata_dd.npartitions}")
+    # TODO: Rename gather_papers_data and put below embedding computation logic in it
+    metadata_with_body_dd = gather_papers_data(metadata_df)
+    metadata_with_body_dd = metadata_with_body_dd.repartition(partition_size="100MB")
+    print(f"# partitions in research papers' metadata dd: {metadata_with_body_dd.npartitions}")
 
     # Get embeddings of each research paper's title and abstract (embeddings of body text would lose too much info due to current ineffective pooling techniques)
     """
@@ -152,17 +147,17 @@ def preprocess_papers(metadata_filename) -> pd.DataFrame:
     ).compute(scheduler="processes")
     """
 
-    return metadata_dd
+    return metadata_with_body_dd
 
 
-def rec_to_actions(df, index, data_type):
+def rec_to_actions(df, index):
     for record in df.to_dict(orient="records"):
         record_id = record["cord_uid"]
-        yield ('{ "index" : { "_index" : "%s", "_type" : "%s", "_id": "%s" }}' % (index, data_type, record_id))
+        yield ('{ "index" : { "_index" : "%s", "_id": "%s" }}' % (index, record_id))
         yield (json.dumps(record))
 
 
-def upload_papers_to_es_idx(papers_dd, es_idx, es_hosts, data_type=DATA_TYPE, chunk_size=UPLOAD_CHUNK_SIZE):
+def upload_papers_to_es_idx(papers_dd, es_idx, es_hosts, chunk_size=UPLOAD_CHUNK_SIZE):
     """
     Uploading Pandas DF to Elasticsearch Index: https://stackoverflow.com/questions/49726229/how-to-export-pandas-data-to-elasticsearch
     """
@@ -174,7 +169,6 @@ def upload_papers_to_es_idx(papers_dd, es_idx, es_hosts, data_type=DATA_TYPE, ch
         print(f"Index {es_idx} already exists; continue uploading papers to {es_idx}")
 
     try:
-        # TODO: Use asyncio to parallelize these ES uploads (network request: es.bulk(rec_to_actions))
         for partition_num in range(papers_dd.npartitions):
             start = time.time()
             papers_dd_partition = papers_dd.get_partition(partition_num)
@@ -183,7 +177,7 @@ def upload_papers_to_es_idx(papers_dd, es_idx, es_hosts, data_type=DATA_TYPE, ch
             print(f"Partition #{partition_num} compute time: {compute_end - start}")
             print(f"Papers partition memory size: {papers_df_partition.memory_usage(deep=True).sum()}")
             print(f"Number of papers in partition: {papers_df_partition.shape[0]}")
-            r = es.bulk(rec_to_actions(papers_df_partition, es_idx, data_type))
+            r = es.bulk(rec_to_actions(papers_df_partition, es_idx))
             upload_end = time.time()
             print(f"Partition #{partition_num} upload time: {upload_end - compute_end}")
             print(f"Errors in uploading partition #{partition_num}: {r['errors']}\n\n")
@@ -208,9 +202,9 @@ def upload_papers_to_es_idx(papers_dd, es_idx, es_hosts, data_type=DATA_TYPE, ch
 
 def main():
     start = time.time()
-    client = Client(n_workers=NUM_CPU_CORES)  # Set to number of cores of machine
-    dask_scheduler_workers = list(client.scheduler_info()["workers"].values())
-    print(f"Workers of Dask scheduler: {dask_scheduler_workers}\n\n")
+    # client = Client(n_workers=NUM_CPU_CORES)  # Set to number of cores of machine
+    # dask_scheduler_workers = list(client.scheduler_info()["workers"].values())
+    # print(f"Workers of Dask scheduler: {dask_scheduler_workers}\n\n")
     research_papers_dd = preprocess_papers("metadata.csv")
     preprocessing_end = time.time()
     print(f"Preprocessing time (in seconds): {preprocessing_end - start}\n\n")  # Takes ~60-65 seconds

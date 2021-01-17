@@ -26,16 +26,6 @@ DEEP_EMBEDDINGS_MAP = {
     "bert": "<insert_filepath_here>",  # 768-length vector (1024 for large)
 }
 
-"""
-Script structure:
-1. preprocess_papers
--> _remove_papers_with_null_cols, _fill_in_missing_data, _gather_papers_data, _generate_embeddings
-_gather_papers_data
--> _retrieve_paper_body_text
-2. upload_papers_to_es_idx
--> es.indices.create, _rec_to_actions
-"""
-
 
 def retrieve_paper_body_text(pdf_json_files: str) -> str:
     # print(f"WTF is the dir wrong: {os.getcwd()}")

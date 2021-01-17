@@ -144,57 +144,12 @@ def preprocess_papers(metadata_filename) -> pd.DataFrame:
     ).compute(scheduler="processes")
     """
 
-    return metadata_with_body_dd
-
 
 def rec_to_actions(df, index):
     for record in df.to_dict(orient="records"):
         record_id = record["cord_uid"]
         yield ('{ "index" : { "_index" : "%s", "_id": "%s" }}' % (index, record_id))
         yield (json.dumps(record))
-
-
-def upload_papers_to_es_idx(papers_dd, es_idx, es_hosts, chunk_size=UPLOAD_CHUNK_SIZE):
-    """
-    Uploading Pandas DF to Elasticsearch Index: https://stackoverflow.com/questions/49726229/how-to-export-pandas-data-to-elasticsearch
-    """
-    # TODO: Catch other exceptions in the future: https://elasticsearch-py.readthedocs.io/en/master/exceptions.html
-    try:
-        es = Elasticsearch(hosts=es_hosts)
-        es.indices.create(index=es_idx, ignore=400)
-    except RequestError:
-        print(f"Index {es_idx} already exists; continue uploading papers to {es_idx}")
-
-    try:
-        for partition_num in range(papers_dd.npartitions):
-            start = time.time()
-            papers_dd_partition = papers_dd.get_partition(partition_num)
-            papers_df_partition = papers_dd_partition.compute()
-            compute_end = time.time()
-            print(f"Partition #{partition_num} compute time: {compute_end - start}")
-            print(f"Papers partition memory size: {papers_df_partition.memory_usage(deep=True).sum()}")
-            print(f"Number of papers in partition: {papers_df_partition.shape[0]}")
-            r = es.bulk(rec_to_actions(papers_df_partition, es_idx), request_timeout=20)
-            upload_end = time.time()
-            print(f"Partition #{partition_num} upload time: {upload_end - compute_end}")
-            print(f"Errors in uploading partition #{partition_num}: {r['errors']}\n\n")
-
-    except TransportError as te:
-        transport_error_413_url = "https://github.com/elastic/elasticsearch/issues/2902"
-        transport_error_429_urls = [
-            "https://stackoverflow.com/questions/61870751/circuit-breaking-exception-parent-data-too-large-data-for-http-request",
-            "https://github.com/elastic/elasticsearch/issues/31197",
-        ]
-        if te.status_code == 413:
-            print(
-                f"Transport error with status code 413. Chunk size is too large, so try reducing chunk size constant or increase http.max_content_length in the yml file. More info here: {transport_error_413_url}"
-            )
-        elif te.status_code == 429:
-            print(
-                f"Transport error with status code 429. Elasticsearch's JVM heap size is too small, so try increasing ES_HEAP_SIZE env var in docker-compose.yml. More info here: {transport_error_429_urls}"
-            )
-        print(f"Error stacktrace: {te.error, te.info}")
-        raise te
 
 
 def upload_parquet_dir_to_es_idx(parquet_dir, es_idx, es_hosts, chunk_size=UPLOAD_CHUNK_SIZE):
@@ -253,7 +208,7 @@ def main():
     # client = Client(n_workers=NUM_CPU_CORES)  # Set to number of cores of machine
     # dask_scheduler_workers = list(client.scheduler_info()["workers"].values())
     # print(f"Workers of Dask scheduler: {dask_scheduler_workers}\n\n")
-    # research_papers_dd = preprocess_papers("metadata.csv")
+    preprocess_papers("metadata.csv")
     preprocessing_end = time.time()
     print(f"Preprocessing time (in seconds): {preprocessing_end - start}\n\n")  # Takes ~60-65 seconds
     # upload_papers_to_es_idx(research_papers_dd, COVID19_PAPERS_INDEX, ["localhost"])

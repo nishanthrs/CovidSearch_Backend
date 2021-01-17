@@ -4,7 +4,7 @@
 
 import hashlib
 from elasticsearch import Elasticsearch
-from build_research_paper_index import COVID19_PAPERS_INDEX, DATA_TYPE
+from build_research_paper_index import COVID19_PAPERS_INDEX
 
 es = Elasticsearch(["localhost"])
 dict_of_duplicate_docs = {}
@@ -31,9 +31,7 @@ def populate_dict_of_duplicate_docs(hits):
 # Loop over all documents in the index, and populate the
 # dict_of_duplicate_docs data structure.
 def scroll_over_all_docs():
-    data = es.search(
-        index=COVID19_PAPERS_INDEX, scroll="1m", body={"query": {"match_all": {}}}
-    )
+    data = es.search(index=COVID19_PAPERS_INDEX, scroll="1m", body={"query": {"match_all": {}}})
     # Get the scroll ID
     sid = data["_scroll_id"]
     scroll_size = len(data["hits"]["hits"])
@@ -56,35 +54,23 @@ def loop_over_hashes_and_remove_duplicates():
         if len(array_of_ids) > 1:
             # print("********** Duplicate docs hash=%s **********" % hashval)
             # Get the documents that have mapped to the current hashval
-            matching_docs = es.mget(
-                index=COVID19_PAPERS_INDEX,
-                doc_type=DATA_TYPE,
-                body={"ids": array_of_ids},
-            )
+            matching_docs = es.mget(index=COVID19_PAPERS_INDEX, body={"ids": array_of_ids},)
             doc_ids = [doc["_id"] for doc in matching_docs["docs"]]
 
             # Delete in bulk; much faster operation than deleting one by one: https://stackoverflow.com/questions/30859142/how-to-delete-documents-from-elasticsearch
             bulk_delete_body = [
-                '{{"delete": {{"_index": "{}", "_type": "{}", "_id": "{}"}}}}'.format(
-                    COVID19_PAPERS_INDEX, DATA_TYPE, doc_id
-                )
+                '{{"delete": {{"_index": "{}", "_id": "{}"}}}}'.format(COVID19_PAPERS_INDEX, doc_id)
                 for doc_id in doc_ids
             ]
             es.bulk("\n".join(bulk_delete_body))
 
 
 def main():
-    pre_total_num_hits = es.count(
-        index=COVID19_PAPERS_INDEX, body={"query": {"match_all": {}}}
-    )
+    pre_total_num_hits = es.count(index=COVID19_PAPERS_INDEX, body={"query": {"match_all": {}}})
     scroll_over_all_docs()
     loop_over_hashes_and_remove_duplicates()
-    post_total_num_hits = es.count(
-        index=COVID19_PAPERS_INDEX, body={"query": {"match_all": {}}}
-    )
-    print(
-        f"Number of entries before and after deduplication: {pre_total_num_hits}, {post_total_num_hits}"
-    )
+    post_total_num_hits = es.count(index=COVID19_PAPERS_INDEX, body={"query": {"match_all": {}}})
+    print(f"Number of entries before and after deduplication: {pre_total_num_hits}, {post_total_num_hits}")
 
 
 main()

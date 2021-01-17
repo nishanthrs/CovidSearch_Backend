@@ -1,10 +1,11 @@
 #!/usr/bin/python3
 
-import dask.dataframe
+import dask.dataframe as dd
+from dask.distributed import Client
 from datetime import datetime
-from dateutil import parser
 from elasticsearch import Elasticsearch, RequestError, TransportError
 import json
+import multiprocessing
 import numpy as np
 import os
 import pandas as pd
@@ -14,6 +15,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 import time
 from typing import List
 
+NUM_CPU_CORES = multiprocessing.cpu_count()
 NUM_DF_PARTITIONS = 30
 RESEARCH_PAPER_DATA_DIR = "research_papers"
 COVID19_PAPERS_INDEX = "covid19_papers"
@@ -24,6 +26,16 @@ DEEP_EMBEDDINGS_MAP = {
     "distilbert": "<insert_filepath_here>",  # 256-length vector
     "bert": "<insert_filepath_here>",  # 768-length vector (1024 for large)
 }
+
+"""
+Script structure:
+1. preprocess_papers
+-> _remove_papers_with_null_cols, _fill_in_missing_data, _gather_papers_data, _generate_embeddings
+_gather_papers_data
+-> _retrieve_paper_body_text
+2. upload_papers_to_es_idx
+-> es.indices.create, _rec_to_actions
+"""
 
 
 def retrieve_paper_body_text(pdf_json_files) -> str:
@@ -49,15 +61,22 @@ def retrieve_paper_body_text(pdf_json_files) -> str:
     return ""
 
 
-def gather_papers_data(
-    metadata_df: pd.DataFrame, metadata_dd: dask.dataframe, dir: str
-) -> pd.DataFrame:
+def retrieve_paper_body_text_for_series(pdf_json_files_series: pd.Series) -> pd.Series:
+    return pdf_json_files_series.apply(lambda pdf_json_files: retrieve_paper_body_text(pdf_json_files))
+
+
+def gather_papers_data(metadata_df: pd.DataFrame, dir: str) -> dd:
+    metadata_dd = dd.from_pandas(metadata_df, npartitions=NUM_DF_PARTITIONS)
+    """
     metadata_df["body"] = metadata_dd.map_partitions(
         lambda df: df["pdf_json_files"].apply(
             lambda pdf_json_files: retrieve_paper_body_text(pdf_json_files)
         )
     ).compute(scheduler="processes")
-    return metadata_df
+    """
+    return metadata_dd.map_partitions(
+        lambda df: df.assign(body=retrieve_paper_body_text_for_series(df.pdf_json_files))
+    )
 
 
 def remove_papers_with_null_cols(df: pd.DataFrame, cols: List[str]) -> None:
@@ -72,9 +91,7 @@ def fill_in_missing_data(df: pd.DataFrame) -> None:
     print(f"Cols with missing values after: {cols_with_missing_vals}")
 
 
-def generate_embeddings(
-    embedding_type: str, embedding_model_filename: str, docs: pd.Series
-) -> pd.Series:
+def generate_embeddings(embedding_type: str, embedding_model_filename: str, docs: pd.Series) -> pd.Series:
     if embedding_type == "tfidf":
         tfidf_vectorizer = TfidfVectorizer()
         doc_embeddings = tfidf_vectorizer.fit_transform(docs)
@@ -111,29 +128,18 @@ def preprocess_papers(metadata_filename) -> pd.DataFrame:
     metadata_cols_dtypes = {col: str for col in metadata_cols}
     metadata_df = pd.read_csv(metadata_filename, dtype=metadata_cols_dtypes)
     print(f"Metadata df shape: {metadata_df.shape}")
-    print(
-        f"Memory usage of metadata_df before clean: {metadata_df.memory_usage(deep=True).sum()}"
-    )
+    print(f"Memory usage of metadata_df before clean: {metadata_df.memory_usage(deep=True).sum()}")
+    # Perform operations in place to reduce memory usage
     remove_papers_with_null_cols(metadata_df, ["title"])
     remove_papers_with_null_cols(metadata_df, ["abstract", "url"])
     fill_in_missing_data(metadata_df)
-    metadata_dd = dask.dataframe.from_pandas(metadata_df, npartitions=NUM_DF_PARTITIONS)
-    print(
-        f"Memory usage of metadata_df after clean: {metadata_df.memory_usage(deep=True).sum()}"
-    )
+    print(f"Memory usage of metadata_df after clean: {metadata_df.memory_usage(deep=True).sum()}")
 
     # Get body of research papers and store in df
-    research_papers_df = gather_papers_data(metadata_df, metadata_dd, os.getcwd())
-    print(f"Research papers df shape: {research_papers_df.shape}")
-    print(
-        f"Memory usage of research_papers_df: {research_papers_df.memory_usage(deep=True).sum()}"
-    )
-    # TODO: MemoryError here; figure out way to prevent this
-    """
-    research_papers_dd = dask.dataframe.from_pandas(
-        research_papers_df, npartitions=NUM_DF_PARTITIONS
-    )
-    """
+    # TODO: Rename gather_papers_data and put below embedding computations in it
+    metadata_dd = gather_papers_data(metadata_df, os.getcwd())
+    metadata_dd = metadata_dd.repartition(partition_size="100MB")
+    print(f"# partitions in research papers' metadata dd: {metadata_dd.npartitions}")
 
     # Get embeddings of each research paper's title and abstract (embeddings of body text would lose too much info due to current ineffective pooling techniques)
     """
@@ -146,22 +152,17 @@ def preprocess_papers(metadata_filename) -> pd.DataFrame:
     ).compute(scheduler="processes")
     """
 
-    return research_papers_df
+    return metadata_dd
 
 
 def rec_to_actions(df, index, data_type):
     for record in df.to_dict(orient="records"):
         record_id = record["cord_uid"]
-        yield (
-            '{ "index" : { "_index" : "%s", "_type" : "%s", "_id": "%s" }}'
-            % (index, data_type, record_id)
-        )
+        yield ('{ "index" : { "_index" : "%s", "_type" : "%s", "_id": "%s" }}' % (index, data_type, record_id))
         yield (json.dumps(record))
 
 
-def upload_papers_to_es_idx(
-    papers_df, es_idx, es_hosts, data_type=DATA_TYPE, chunk_size=UPLOAD_CHUNK_SIZE
-):
+def upload_papers_to_es_idx(papers_dd, es_idx, es_hosts, data_type=DATA_TYPE, chunk_size=UPLOAD_CHUNK_SIZE):
     """
     Uploading Pandas DF to Elasticsearch Index: https://stackoverflow.com/questions/49726229/how-to-export-pandas-data-to-elasticsearch
     """
@@ -173,18 +174,20 @@ def upload_papers_to_es_idx(
         print(f"Index {es_idx} already exists; continue uploading papers to {es_idx}")
 
     try:
-        idx = 0
-        while idx < papers_df.shape[0]:
-            if idx + chunk_size < papers_df.shape[0]:
-                max_idx = idx + chunk_size
-            else:
-                max_idx = papers_df.shape[0]
+        # TODO: Use asyncio to parallelize these ES uploads (network request: es.bulk(rec_to_actions))
+        for partition_num in range(papers_dd.npartitions):
+            start = time.time()
+            papers_dd_partition = papers_dd.get_partition(partition_num)
+            papers_df_partition = papers_dd_partition.compute()
+            compute_end = time.time()
+            print(f"Partition #{partition_num} compute time: {compute_end - start}")
+            print(f"Papers partition memory size: {papers_df_partition.memory_usage(deep=True).sum()}")
+            print(f"Number of papers in partition: {papers_df_partition.shape[0]}")
+            r = es.bulk(rec_to_actions(papers_df_partition, es_idx, data_type))
+            upload_end = time.time()
+            print(f"Partition #{partition_num} upload time: {upload_end - compute_end}")
+            print(f"Errors in uploading partition #{partition_num}: {r['errors']}\n\n")
 
-            papers_df_chunk = papers_df.loc[idx:max_idx]
-            r = es.bulk(rec_to_actions(papers_df_chunk, es_idx, data_type))
-            print(f"Uploaded papers from {idx} to {max_idx}")
-            idx = max_idx
-            print(f"Errors: {r['errors']}")
     except TransportError as te:
         transport_error_413_url = "https://github.com/elastic/elasticsearch/issues/2902"
         transport_error_429_urls = [
@@ -205,18 +208,16 @@ def upload_papers_to_es_idx(
 
 def main():
     start = time.time()
-    research_papers_df = preprocess_papers("metadata.csv")
+    client = Client(n_workers=NUM_CPU_CORES)  # Set to number of cores of machine
+    dask_scheduler_workers = list(client.scheduler_info()["workers"].values())
+    print(f"Workers of Dask scheduler: {dask_scheduler_workers}\n\n")
+    research_papers_dd = preprocess_papers("metadata.csv")
     preprocessing_end = time.time()
-    print(
-        f"Preprocessing time (in seconds): {preprocessing_end - start}"
-    )  # Takes ~60-65 seconds
-    upload_papers_to_es_idx(research_papers_df, COVID19_PAPERS_INDEX, ["localhost"])
+    print(f"Preprocessing time (in seconds): {preprocessing_end - start}\n\n")  # Takes ~60-65 seconds
+    upload_papers_to_es_idx(research_papers_dd, COVID19_PAPERS_INDEX, ["localhost"])
     build_es_index_end = time.time()
-    print(
-        f"Upload to elasticsearch idx: {build_es_index_end - preprocessing_end}"
-    )  # Takes ~240-270 seconds
+    print(f"Upload to elasticsearch idx: {build_es_index_end - preprocessing_end}")  # Takes ~240-270 seconds
 
 
 if __name__ == "__main__":
     main()
-

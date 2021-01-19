@@ -28,7 +28,6 @@ DEEP_EMBEDDINGS_MAP = {
 
 
 def retrieve_paper_body_text(pdf_json_files: str) -> str:
-    # print(f"WTF is the dir wrong: {os.getcwd()}")
     if pdf_json_files and type(pdf_json_files) is str:
         for json_path in pdf_json_files.split("; "):
             paper_body_text = []

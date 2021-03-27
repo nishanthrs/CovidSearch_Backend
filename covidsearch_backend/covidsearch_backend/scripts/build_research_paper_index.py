@@ -181,7 +181,9 @@ def upload_parquet_dir_to_es_idx(parquet_dir, es_idx, es_hosts, chunk_size=UPLOA
             print(
                 f"Transport error with status code 429. Elasticsearch's JVM heap size is too small, so try increasing ES_HEAP_SIZE env var in docker-compose.yml. More info here: {transport_error_429_urls}"
             )
-        print(f"Error stacktrace: {te.error, te.info}")
+        else:
+            # TODO: Could be ConnectionTimeout in connecting to index; retry if that's the case
+            print(f"Error stacktrace: {te.error, te.info}")
         raise te
 
 

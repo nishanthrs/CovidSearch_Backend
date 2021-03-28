@@ -29,6 +29,7 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
             }
         }
         # TODO: Modify below query to use with preprocessed embeddings from build_research_paper_index script
+        # Use source: https://sci2lab.github.io/ml_tutorial/tfidf/#Extra-Resources
         """
         tfidf_vectorizer = pickle.load(open("models/tfidf_title_vectorizer.pickle", "rb"))
         query_vector = tfidf_vectorizer.transform(query)
@@ -44,14 +45,26 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
             }
         }
         """
+        # TODO: Modify below query to use with preprocessed BERT (or other deep learning models) embeddings from build_research_paper_index script
+        # Source: https://github.com/Hironsan/bertsearch/blob/master/web/app.py
+        """
+        bc = BertClient(ip='bertserving', output_fmt='list')
+        query_vector = bc.encode([query])[0]
+        script_query = {
+            "script_score": {
+                "query": {"match_all": {}},
+                "script": {
+                    "source": "cosineSimilarity(params.query_vector, doc['text_vector']) + 1.0",
+                    "params": {"query_vector": query_vector}
+                }
+            }
+        }
+        """
+
         # TODO: Figure out way to prioritize ranking for papers with non-empty abstract and urls
         search_coroutine = es.search(
             index="covid19_papers",
-            body={
-                "from": 0,
-                "size": NUM_INITIAL_SEARCH_RESULTS,
-                "query": fuzzy_multimatch_query,
-            },
+            body={"from": 0, "size": NUM_INITIAL_SEARCH_RESULTS, "query": fuzzy_multimatch_query,},
         )
         search_tasks.append(search_coroutine)
         # Just add more I/O heavy tasks (like db queries!) to search_tasks to get full benefit of async concurrency
@@ -91,8 +104,6 @@ def search_covid19_papers(request: HttpRequest) -> JsonResponse:
 
     # Run async method in synchronous method by creating event loop
     loop = asyncio.new_event_loop()
-    relevant_papers = loop.run_until_complete(
-        _search_elasticsearch_index(hosts, index, query)
-    )
+    relevant_papers = loop.run_until_complete(_search_elasticsearch_index(hosts, index, query))
     loop.close()
     return JsonResponse(data={"status": 200, "papers": relevant_papers})

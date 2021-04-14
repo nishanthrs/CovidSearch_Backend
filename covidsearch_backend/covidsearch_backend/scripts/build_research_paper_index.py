@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+# build_research_paper_index.pyi
+
 import dask.dataframe as dd
 from dask.distributed import Client
 from datetime import datetime
@@ -10,15 +12,17 @@ import numpy as np
 import os
 import pandas as pd
 import pickle
+from retrying import retry
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 from sklearn.feature_extraction.text import TfidfVectorizer
 import time
 from typing import List
 
+COVID19_PAPERS_INDEX = "covid19_papers"
+MAX_NUM_RETRIES = 3
 NUM_CPU_CORES = multiprocessing.cpu_count()
 NUM_DF_PARTITIONS = 30
 RESEARCH_PAPER_DATA_DIR = "research_papers"
-COVID19_PAPERS_INDEX = "covid19_papers"
 UPLOAD_CHUNK_SIZE = 1000
 DEEP_EMBEDDINGS_MAP = {
     "cord19": "<insert_filepath_here>",  # 768-length vector
@@ -106,6 +110,8 @@ def preprocess_papers(metadata_filename) -> pd.DataFrame:
     # Perform operations in place to reduce memory usage
     metadata_dd = remove_papers_with_null_cols(metadata_dd, ["title"])
     metadata_dd = remove_papers_with_null_cols(metadata_dd, ["abstract", "url"])
+    metadata_dd = remove_papers_with_null_cols(metadata_dd, ["authors"])
+    metadata_dd = remove_papers_with_null_cols(metadata_dd, ["publish_time"])
     metadata_dd = fill_in_missing_data(metadata_dd)
     print(f"Memory usage of metadata_df after clean: {metadata_dd.memory_usage(deep=True).sum()}")
     print(f"# partitions in metadata dd: {metadata_dd.npartitions}")
@@ -141,32 +147,21 @@ def rec_to_actions(df, index):
         yield (json.dumps(record))
 
 
-def upload_parquet_dir_to_es_idx(parquet_dir, es_idx, es_hosts, chunk_size=UPLOAD_CHUNK_SIZE):
-    """
-    Uploading Pandas DF to Elasticsearch Index: https://stackoverflow.com/questions/49726229/how-to-export-pandas-data-to-elasticsearch
-    """
-    # TODO: Catch other exceptions in the future: https://elasticsearch-py.readthedocs.io/en/master/exceptions.html
+# pyre-fixme[56]: Pyre was not able to infer the type of argument
+@retry(stop_max_attempt_number=MAX_NUM_RETRIES)
+def upload_parquet_file_to_es_idx(es: Elasticsearch, es_idx: str, papers_dd: dd, partition_num: int) -> None:
     try:
-        es = Elasticsearch(hosts=es_hosts)
-        es.indices.create(index=es_idx, ignore=400)
-    except RequestError:
-        print(f"Index {es_idx} already exists; continue uploading papers to {es_idx}")
-
-    try:
-        papers_dd = dd.read_parquet(parquet_dir, engine="fastparquet")
-        for partition_num in range(papers_dd.npartitions):
-            start = time.time()
-            papers_dd_partition = papers_dd.get_partition(partition_num)
-            papers_df_partition = papers_dd_partition.compute()
-            compute_end = time.time()
-            print(f"Partition #{partition_num} compute time: {compute_end - start}")
-            print(f"Papers partition memory size: {papers_df_partition.memory_usage(deep=True).sum()}")
-            print(f"Number of papers in partition: {papers_df_partition.shape[0]}")
-            r = es.bulk(rec_to_actions(papers_df_partition, es_idx))
-            upload_end = time.time()
-            print(f"Partition #{partition_num} upload time: {upload_end - compute_end}")
-            print(f"Errors in uploading partition #{partition_num}: {r['errors']}\n\n")
-
+        start = time.time()
+        papers_dd_partition = papers_dd.get_partition(partition_num)
+        papers_df_partition = papers_dd_partition.compute()
+        compute_end = time.time()
+        print(f"Partition #{partition_num} compute time: {compute_end - start}")
+        print(f"Papers partition memory size: {papers_df_partition.memory_usage(deep=True).sum()}")
+        print(f"Number of papers in partition: {papers_df_partition.shape[0]}")
+        r = es.bulk(rec_to_actions(papers_df_partition, es_idx))
+        upload_end = time.time()
+        print(f"Partition #{partition_num} upload time: {upload_end - compute_end}")
+        print(f"Errors in uploading partition #{partition_num}: {r['errors']}\n\n")
     except TransportError as te:
         transport_error_413_url = "https://github.com/elastic/elasticsearch/issues/2902"
         transport_error_429_urls = [
@@ -182,9 +177,27 @@ def upload_parquet_dir_to_es_idx(parquet_dir, es_idx, es_hosts, chunk_size=UPLOA
                 f"Transport error with status code 429. Elasticsearch's JVM heap size is too small, so try increasing ES_HEAP_SIZE env var in docker-compose.yml. More info here: {transport_error_429_urls}"
             )
         else:
-            # TODO: Could be ConnectionTimeout in connecting to index; retry if that's the case
+            # Could be ConnectionTimeout in connecting to index
             print(f"Error stacktrace: {te.error, te.info}")
         raise te
+
+
+def upload_parquet_dir_to_es_idx(
+    parquet_dir: str, es_idx: str, es_hosts: List[str], chunk_size: int = UPLOAD_CHUNK_SIZE
+) -> None:
+    """
+    Uploading Pandas DF to Elasticsearch Index: https://stackoverflow.com/questions/49726229/how-to-export-pandas-data-to-elasticsearch
+    """
+    # TODO: Catch other exceptions in the future: https://elasticsearch-py.readthedocs.io/en/master/exceptions.html
+    try:
+        es = Elasticsearch(hosts=es_hosts)
+        es.indices.create(index=es_idx, ignore=400)
+    except RequestError:
+        print(f"Index {es_idx} already exists; continue uploading papers to {es_idx}")
+
+    papers_dd = dd.read_parquet(parquet_dir, engine="fastparquet")
+    for partition_num in range(papers_dd.npartitions):
+        upload_parquet_file_to_es_idx(es, es_idx, papers_dd, partition_num)
 
 
 def main():

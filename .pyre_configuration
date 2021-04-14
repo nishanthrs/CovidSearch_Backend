@@ -1,5 +1,9 @@
 {
   "binary": "/home/nrs/.local/bin/pyre.bin",
+  "search_path": [
+    "/home/nrs/.local/lib/python3.7/site-packages/",
+	  "."
+  ],
   "source_directories": [
     "."
   ],

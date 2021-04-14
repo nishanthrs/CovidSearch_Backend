@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 NUM_INITIAL_SEARCH_RESULTS = 20
 
 
-async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) -> Dict:
+async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) -> List[Dict]:
     """
     Asynchronous method to search papers in elasticsearch
     """
@@ -28,6 +28,7 @@ async def _search_elasticsearch_index(hosts: List[str], index: str, query: str) 
                 "operator": "AND",
             }
         }
+        # Searching embeddings on Elasticsearch: https://www.elastic.co/blog/text-similarity-search-with-vectors-in-elasticsearch
         # TODO: Modify below query to use with preprocessed embeddings from build_research_paper_index script
         # Use source: https://sci2lab.github.io/ml_tutorial/tfidf/#Extra-Resources
         """
